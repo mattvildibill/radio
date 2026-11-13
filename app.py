@@ -26,7 +26,7 @@ def authorize(request, name):
 
 @app.get('/')
 def home():
-    return FileResponse(ROOT / 'public/index.html')
+    return FileResponse(ROOT / 'site/index.html')
 
 @app.get('/api/station')
 def station():
@@ -128,4 +128,4 @@ async def blue_draft(request: Request):
             raise HTTPException(409, 'Draft already submitted; retry with identical content')
     return {'status': 'received', 'id': draft.id}
 
-app.mount('/assets', StaticFiles(directory=ROOT / 'public/assets'), name='assets')
+app.mount('/assets', StaticFiles(directory=ROOT / 'site/assets'), name='assets')

@@ -21,4 +21,4 @@ with tempfile.TemporaryDirectory() as tmp:
                 data.extend(struct.pack('<h', int(1100 * fade * tones)))
             w.writeframes(data)
     subprocess.run(['ffmpeg', '-v', 'error', '-y', '-i', str(wav), '-codec:a', 'libmp3lame',
-                    '-b:a', '48k', str(root / 'public/assets/interlude.mp3')], check=True)
+                    '-b:a', '48k', str(root / 'site/assets/interlude.mp3')], check=True)
