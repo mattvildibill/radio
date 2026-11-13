@@ -21,11 +21,13 @@ quota, production Postgres, or production Blob store has been verified. The app
 can serve its original, clearly labeled evergreen instrumental interlude without
 any of those integrations. This is not a completed news station yet.
 
-The project identity and existing Git integration were verified with Vercel's
-API. Its account billing API denied access to the supplied project credentials;
-the plan must be independently confirmed before deployment under a zero-spend
-requirement. Do not substitute an upgrade, trial, credit balance, billing alert,
-or paid fallback for a free plan that stops at its limit.
+The project identity and existing Git integration were verified with Vercel’s
+API. The production deployment independently reports `plan: hobby`, verifying the
+free account despite the account-level billing endpoint denying access. The
+player is deployed at https://radio.mattvildibill.com with working HTTPS and
+evergreen playback. This token cannot create Blob stores (Vercel returned 403);
+no store was created. Do not substitute an upgrade, trial, credit balance, billing
+alert, or paid fallback for a free plan that stops at its limit.
 
 ## Local development
 
