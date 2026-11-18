@@ -1,83 +1,76 @@
-# Validation record
+# Ask the Hosts pilot — verification record
 
-Production URL: https://radio.mattvildibill.com/
+Date: November 18, 2026. Branch: `codex/ask-the-hosts-pilot`.
 
-Application revision: `c2d2353` (initial app plus two Vercel packaging fixes).
-Vercel production deployment: `dpl_23Z1XB76UfQjc2xJswWchzG6Zn77`.
-Project: `prj_xis6TWeCFzr2f0acjUjx92SPTAtC`; account: `team_MIAl94GGSmIOtH1nytFMKdpU`.
-Deployment API explicitly reported **Hobby**, `READY`, and `target: production`.
+## Verified locally
 
-## Verified in production
+- `pytest -q`: **10 passed**. Authentication and origin checks; Production start
+  denial; missing configuration fails closed; signed research tickets cannot be
+  forged or moved to a new browser session; research must finish with sources
+  before tickets are issued; both hosts receive server-defined voices/context;
+  close capabilities are scoped; quota errors make one request and do not expose
+  provider diagnostics or keys; request size limits and security headers.
+- `npm test`: **6 passed**. Media-silence handoffs; one silence-recovery cue then
+  stop; monologue cap; inactive-host sound does not advance the active turn;
+  deterministic nine-minute handoff simulation; safe source URLs and replay labels.
+- `npm run check`: all three browser modules parse successfully.
+- Chromium local browser: the actual IndexedDB library stored a **24,596-byte**
+  mix of two explicitly labeled synthetic tones. The actual app replay UI showed
+  “Recording,” original date and time, `America/Denver`, age, duration, and source
+  link. After a full page reload it played to completion: media
+  `currentTime = duration = 2.939763`, `ended = true`, `error = null`.
+- Browser fixture injected a research quota failure. UI returned to idle, both
+  hosts showed “Off air,” and the explicit no-retry error appeared. No session
+  request or real provider request was made.
+- Actual app layout rendered without horizontal overflow at 1165px. No app-origin
+  browser error/warning appeared in the inspected logs; unrelated browser
+  extension metadata errors were present.
 
-- HTTPS certificate validation, HTTP 200 home page, health and station API.
-- The custom subdomain is verified and correctly configured in Vercel. No DNS edits.
-- Actual MP3 bytes and HTTP 206 range responses.
-- Chromium with 390×844 mobile viewport/touch: user-initiated evergreen playback.
-- Two browser tabs synchronized to the shared UTC clock within **0.127 seconds**.
-- “Play something new” correctly reports that no fresh edition is published yet.
-- No horizontal overflow at the tested mobile size; no JavaScript errors.
-- Scheduler, database initialization and Blue endpoints return 401 without auth.
-- `generation_active: false`; there is no active publishing schedule.
+The browser fixture is separate from the app and exists only on localhost. It
+bypasses authentication for the fixture UI and supplies a deliberate quota
+failure. It is never imported or mounted by the production/Preview entrypoint.
+The saved test tones are **not AI speech** and are not evidence of host chemistry.
 
-Browser HTTPS checks used the environment proxy with TLS verification enabled.
-The final run used the outer execution context, which has the appropriate browser
-CA trust. The site's CSP remained enforced; no insecure-certificate flags were used.
-This was Chromium mobile emulation, not a physical iPhone/Safari listening test.
+## External access blockers
 
-## Local checks
+- Vercel connector returns HTTP 404 for `radio` by name and by the project ID
+  recorded in the repository, under the known team ID and the user-confirmed
+  `mattvildibills-projects` slug. A name-scoped list returned no project.
+- Only radio was targeted. No other repo/project was inspected or changed.
+- With user-approved browser fallback, the exact radio dashboard redirected to
+  Vercel sign-in. The secure sign-in request returned `declined`. No credentials
+  were retrieved, exposed, or entered by the agent.
+- No usable Vercel CLI credential is available in this execution environment.
 
-`pytest -q`: **14 passed**, with SQLite and controlled model/storage fixtures.
+## Not yet verified — required before acceptance
 
-- Replayed identical development is rejected.
-- New development for the same event publishes.
-- Semantic-review rejection suppresses a reworded duplicate before narration.
-- Retrying a completed publication does not narrate or publish twice.
-- Generation failure preserves the previous complete edition and coverage.
-- Upload failure creates no publication; retry commits exactly once.
-- Concurrent claims admit only one writer.
-- Failed attempts count toward the daily cap.
-- Invented source URLs are rejected.
-- Blue authentication, identical retry and conflicting-ID rejection.
-- Absence of Blue does not prevent routine publishing.
-- Shared UTC clock and next-hour publication cutover.
-- Missing free-tier verification disables generation.
-- Missing database still permits evergreen playback and range requests.
-- Coverage fingerprint ignores case and punctuation.
+- The new Preview `OPENAI_API_KEY` through the app; no real OpenAI call has run.
+- GPT-Live access, actual two-session startup, actual reciprocal input audio,
+  audible contextual responses, or voice audition/level tuning. Gleam/Vesper and
+  the initial gains are candidates pending a real audition.
+- Whether the chosen producer model accepts this bounded web-search/structured
+  output request with this project's API access.
+- Typed follow-up changing a real spoken discussion.
+- Real conversation recording and playback after reload on the private Preview.
+- Both real sessions reporting final usage after stop, timeout, or disconnect.
+- Full nine-minute real operation, physical mobile/Safari playback, interrupted
+  WebRTC recovery, or browser-crash billing behavior.
+- Preview project protection, deployed environment configuration, deployment
+  identity and status. No production rollout is authorized.
 
-Separate browser fixture checks passed for on-demand audio, transcript rendering,
-heard-state persistence after reload, caught-up state, and live pause/resume.
-The fixture used the instrumental interlude, not a fabricated news recording.
+**OpenAI usage incurred by this work so far: zero requests, $0.** Local tests use
+fixtures, not the newly added key. The $15 project budget was not changed.
 
-## Not verified / external prerequisites
+## Next executable acceptance sequence
 
-- No real Gemini text or two-speaker audio was generated, listened to or evaluated.
-- No dedicated production Postgres database is connected.
-- Blob creation was rejected with `403 forbidden`, action `create`, resource `blob`.
-  The radio-only project token cannot provision this account-level resource.
-- Real Postgres/Blob publication, provider failure recovery and quotas remain untested.
-- No two cloud-scheduled editions have run. No schedule is active.
-- No real Blue connection/task or handoff exists. Only the authenticated handler
-  was tested locally with a controlled fixture.
-- No physical-device or Safari playback test was performed.
-
-## Exact next account steps
-
-1. In the **existing radio Vercel project**, open **Storage**. Create a new public
-   Blob store named `radio-audio`, connect only radio, and retain the Hobby/free
-   plan. It should inject `BLOB_READ_WRITE_TOKEN` into radio's Production settings.
-2. From the same project's Storage view, create/connect a dedicated **Neon Free**
-   database named `radio`, without a paid plan, trial or billing upgrade. Connect
-   only radio and ensure the server-side Production variable is `DATABASE_URL`
-   (or `POSTGRES_URL`). If the interface requires a payment method or paid plan,
-   stop rather than accepting it.
-3. In Google AI Studio, create a dedicated radio API project and key with billing
-   disabled / Free tier. Add the key only to the radio project's server-side
-   Production environment as `GEMINI_API_KEY`. Confirm the actual text and
-   multi-speaker TTS free quotas in AI Studio before enabling generation. Never
-   paste the key in chat. Model IDs and cadence remain unset until measured.
-4. For a real Blue feature, make its connection available, or configure one new
-   radio-only task using the handoff contract in README. Do not alter existing tasks.
-
-The agent can then recheck the radio-only credentials, initialize schema, verify
-models/quotas, generate and listen to a real edition, enable the measured cadence,
-and observe two separate cloud-scheduled publication runs.
+1. Restore access to the existing radio Vercel project (connector or browser).
+2. Confirm project identity, existing free plan, Git link, and Preview protection.
+3. Add a new radio-only `RADIO_PILOT_PASSWORD` in Preview; leave all existing
+   settings/keys/integrations alone. Use only existing Preview `OPENAI_API_KEY`.
+4. Deploy this branch to Preview in that exact existing project, then open and
+   unlock the private studio.
+5. Run a short sourced question (about 60–90 seconds), audition both voices and
+   adjust levels/handoff timing based on actual audio. Inject a typed follow-up.
+6. Explicitly record, stop, confirm both final session usage events, reload the
+   same preview origin and play the saved conversation. Retain usage/notes and
+   report only observed results. Stop on any spend/quota error; do not retry it.

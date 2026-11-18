@@ -1,0 +1,1 @@
+{"name":"radio-pilot","private":true,"type":"module","scripts":{"test":"node --test tests/controller.test.js","check":"node --check site/assets/player.js && node --check site/assets/controller.js && node --check site/assets/library.js"}}
