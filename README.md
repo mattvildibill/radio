@@ -27,26 +27,36 @@ integration is used by this app. No external settings were removed or modified.
 
 ## Private access and credentials
 
-Set these **only in radio's Preview environment**:
+Use the existing **Vercel Authentication** gate on this stable branch Preview:
 
-- `OPENAI_API_KEY`: the user's newly added OpenAI project key. Never expose or
-  copy it to browser code. It is sent only to `https://api.openai.com/v1`.
-- `RADIO_PILOT_PASSWORD`: a separate random passphrase of at least 24 characters.
-  Use it to unlock the studio. Keep it out of Git and chat logs. Existing secrets
-  are not substitutes. Without it all show starts fail closed.
+https://radio-git-codex-ask-the-hosts-pilot-mattvildibills-projects.vercel.app
 
-The passphrase issues a 12-hour HttpOnly, SameSite=Strict cookie (Secure on
-Vercel). Mutating routes require same-origin requests. Producer tickets are
-signed, expire after 20 minutes, and are bound to the authenticated browser.
-Closing a session uses a separate scoped, signed capability so the browser can
-still close on unload or after access expires. No cross-origin CORS is enabled.
-The app rejects research/session creation when `VERCEL_ENV=production`.
-Keep existing Vercel Deployment Protection enabled as an additional outer gate.
+The only required application credential is the user's newly added server-side
+`OPENAI_API_KEY` in **radio Preview**. No second pilot password is needed, and
+older keys/integrations remain untouched. Do not reveal or copy the key to the
+browser. Existing Vercel authentication is the access-control authority.
+
+Before granting an app session or starting any new billable request, the server
+probes `/api/privacy-probe` on that **exact fixed radio Preview hostname** with
+no authentication, cookies, or redirect following. It must get the verified
+Vercel SSO redirect. If protection is disabled the app's probe returns 204, and
+admission fails closed; unknown responses and network failures also block starts.
+Other hostnames and non-Preview environments cannot start this pilot. Only the
+stable branch URL is supported; immutable deployment URLs are intentionally not
+accepted for show starts.
+
+After Vercel authentication and the protection check, the app issues a 12-hour
+Secure, HttpOnly, SameSite=Strict browser cookie. Capability-signing material is
+derived server-side from OPENAI_API_KEY with a separate HMAC purpose. The API key
+and derived secret are never returned. Research tickets expire after 20 minutes
+and are bound to that browser session. Mutating routes require the same origin.
+Closing uses a separate short-lived capability so session cleanup remains
+possible after app access expires. No cross-origin CORS is enabled.
 
 The private pilot assumes a trusted owner: signed brief tickets can be reused
 within their expiry and there is no distributed concurrency/spend ledger. Do not
 open this app to a wider audience without durable server-side metering and
-single-use admission control.
+single-use admission control. No Vercel protection settings are changed by code.
 
 ## Live show and cost controls
 
@@ -106,7 +116,7 @@ python -m venv .venv
 .venv/bin/pytest -q
 npm test
 npm run check
-# Supply the two server environment variables securely, then:
+# Local rendering is available; paid calls require the protected Preview:
 .venv/bin/uvicorn app:app --host 127.0.0.1 --port 8766
 ```
 

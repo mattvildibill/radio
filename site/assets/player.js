@@ -339,15 +339,10 @@ async function renderLibrary() {
 async function init() {
   const status = await (await fetch('/api/status')).json();
   $('access').hidden = status.unlocked; $('studio').hidden = !status.unlocked;
-  if (!status.configured) $('access-status').textContent = 'Private access needs to be configured in radio Preview before the studio can open.';
-  if (!status.preview) $('access-status').textContent = 'This pilot is available only on its Preview deployment.';
+  if (!status.unlocked) $('access-status').textContent = status.message || 'Open the protected radio Preview to use this studio.';;
   if (status.unlocked) await renderLibrary();
 }
-$('unlock-form').onsubmit = async e => {
-  e.preventDefault();
-  try { await api('/api/unlock', {password: $('password').value}); $('password').value = ''; await init(); }
-  catch (error) { $('access-status').textContent = error.message; }
-};
+$('retry-access').onclick = () => init().catch(fail);
 $('question-form').onsubmit = startShow;
 $('stop').onclick = () => void stopShow();
 $('record').onclick = () => void toggleRecording();
@@ -357,7 +352,6 @@ $('followup-form').onsubmit = e => {
   pendingFollowup = $('followup').value.trim(); if (!pendingFollowup) return;
   $('followup').value = ''; $('followup-status').textContent = 'Queued for the next natural handoff.'; log('followup-queued', {text: pendingFollowup});
 };
-$('lock').onclick = async () => { await stopShow(); await api('/api/lock', {}); await init(); };
 $('download-notes').onclick = () => {
   const safeShow = show ? Object.fromEntries(Object.entries(show).filter(([k]) => !['ticket', 'owner'].includes(k))) : null;
   const a = blobLink(new Blob([JSON.stringify({show: safeShow, ...notes}, null, 2)], {type: 'application/json'}), 'radio-show-notes.json', 'Download');

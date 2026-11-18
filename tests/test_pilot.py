@@ -4,18 +4,26 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 import app as web
-PASSWORD = 'test-only-passphrase-not-for-deployment'
-ORIGIN = {'origin': 'http://testserver'}
+ORIGIN = {'origin': 'https://' + web.PREVIEW_HOST}
 BRIEF = {k: f'Researched {k}' for k in web.BRIEF_SCHEMA['required']}
 @pytest.fixture
 def client(monkeypatch):
-    monkeypatch.setenv('RADIO_PILOT_PASSWORD', PASSWORD)
+    monkeypatch.setenv('VERCEL', '1')
     monkeypatch.setenv('OPENAI_API_KEY', 'test-key-never-a-real-credential')
     monkeypatch.setenv('VERCEL_ENV', 'preview')
-    with TestClient(web.app) as c: yield c
+    class ProtectedTransport:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def get(self, url, **kwargs):
+            assert url == 'https://' + web.PREVIEW_HOST + '/api/privacy-probe'
+            assert 'Authorization' not in kwargs.get('headers', {})
+            return httpx.Response(302, headers={'location': 'https://vercel.com/sso-api?url=preview'})
+    monkeypatch.setattr(web.httpx, 'AsyncClient', lambda **kwargs: ProtectedTransport())
+    with TestClient(web.app, base_url='https://' + web.PREVIEW_HOST) as c: yield c
 
 def unlock(c):
-    assert c.post('/api/unlock', json={'password': PASSWORD}, headers=ORIGIN).status_code == 200
+    c.cookies.clear()
+    assert c.get('/api/status').status_code == 200
 
 def researched():
     return {'status': 'completed', 'model': 'gpt-5.6-luna', 'usage': {'input_tokens': 123, 'output_tokens': 456}, 'output': [
@@ -24,19 +32,20 @@ def researched():
       {'type': 'url_citation', 'url': 'https://example.org/report', 'title': 'Reporting'}]}]}]}
 
 def test_closed_without_configuration(client, monkeypatch):
-    monkeypatch.delenv('RADIO_PILOT_PASSWORD')
+    monkeypatch.delenv('OPENAI_API_KEY')
     assert client.get('/api/status').json()['configured'] is False
     assert client.post('/api/research', json={'question': 'test topic'}, headers=ORIGIN).status_code == 401
 
 def test_auth_origin_production_and_cookie(client, monkeypatch):
     assert client.post('/api/research', json={}, headers=ORIGIN).status_code == 401
-    assert client.post('/api/unlock', json={'password': PASSWORD}, headers={'origin': 'https://evil.example'}).status_code == 403
-    assert client.post('/api/unlock', json={'password': PASSWORD}).status_code == 403
-    response = client.post('/api/unlock', json={'password': PASSWORD}, headers=ORIGIN)
-    assert 'HttpOnly' in response.headers['set-cookie'] and 'SameSite=strict' in response.headers['set-cookie']
+    response = client.get('/api/status')
+    assert 'HttpOnly' in response.headers['set-cookie'] and 'SameSite=strict' in response.headers['set-cookie'] and 'Secure' in response.headers['set-cookie']
+    assert client.post('/api/research', json={}, headers={'origin': 'https://evil.example'}).status_code == 403
+    assert client.post('/api/research', json={}).status_code == 403
     assert client.get('/api/status').json()['unlocked']
     monkeypatch.setenv('VERCEL_ENV', 'production')
     assert client.post('/api/research', json={'question': 'test topic'}, headers=ORIGIN).status_code == 403
+
 
 def test_research_required_and_bound_to_browser(client, monkeypatch):
     unlock(client); upstream = AsyncMock(return_value=researched()); monkeypatch.setattr(web, 'openai', upstream)
@@ -107,3 +116,27 @@ def test_oversized_input_and_security_headers(client):
     assert response.headers['cache-control'] == 'no-store' and 'microphone=()' in response.headers['permissions-policy']
     assert client.get('/api/admin/status').status_code == 404
     assert client.post('/api/jobs/edition').status_code == 404
+
+@pytest.mark.parametrize('code,location', [(204, ''), (200, ''), (302, 'https://evil.example/sso-api'), (302, 'https://vercel.com/login'), (500, ''), (404, '')])
+def test_private_admission_fails_closed_when_outer_gate_is_unconfirmed(client, monkeypatch, code, location):
+    unlock(client)
+    class Transport:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def get(self, *args, **kwargs): return httpx.Response(code, headers={'location': location})
+    monkeypatch.setattr(web.httpx, 'AsyncClient', lambda **kwargs: Transport())
+    upstream = AsyncMock(); monkeypatch.setattr(web, 'openai', upstream)
+    assert client.get('/api/status').status_code == 503
+    assert client.post('/api/research', json={'question': 'a real topic'}, headers=ORIGIN).status_code == 503
+    upstream.assert_not_called()
+
+
+def test_unauthenticated_probe_is_inert_and_never_uses_provider(client, monkeypatch):
+    upstream = AsyncMock(); monkeypatch.setattr(web, 'openai', upstream)
+    assert client.get('/api/privacy-probe').status_code == 204
+    upstream.assert_not_called()
+
+
+def test_unknown_host_cannot_turn_probe_into_ssrf(client):
+    response = client.get('/api/status', headers={'host': 'another-project.vercel.app'})
+    assert response.status_code == 403

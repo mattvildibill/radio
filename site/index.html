@@ -4,7 +4,7 @@
 <body>
 <header><a href="/" class="brand">radio<span> / </span>ask the hosts</a><span class="private">PRIVATE PILOT</span></header>
 <main>
-<section id="access" hidden><p class="eyebrow">A small room. A good conversation.</p><h1>Come on in.</h1><p>This pilot is invitation-only.</p><form id="unlock-form"><label for="password">Pilot passphrase</label><input id="password" type="password" autocomplete="current-password" required maxlength="256"><button>Unlock the studio <span>↗</span></button></form><p id="access-status" role="status"></p></section>
+<section id="access" hidden><p class="eyebrow">A small room. A good conversation.</p><h1>The private studio.</h1><p>Access is protected by your Vercel sign-in.</p><p id="access-status" role="status">Checking private access…</p><button id="retry-access">Check studio access</button></section>
 <div id="studio" hidden>
 <section class="intro"><p class="eyebrow">YOUR QUESTION. TWO DIFFERENT MINDS.</p><h1>Let’s talk<br>about it.</h1><p class="lede">A little research first. Then Mara and Eli work it out together—with you in the room.</p></section>
 <section class="desk" aria-label="Live studio">
@@ -19,6 +19,6 @@
 <section id="research" hidden><div class="section-heading"><h2>The producer’s desk</h2><span id="research-date"></span></div><p id="research-title"></p><details><summary>Read the factual brief</summary><div id="brief"></div></details><ul id="sources" class="sources"></ul></section>
 <section><div class="section-heading"><h2>Your replay library</h2><span>PRIVATE · THIS BROWSER</span></div><p class="small">These are recordings, never live broadcasts. Clearing browser data deletes them. Export a copy to keep it.</p><div id="library"><p class="empty">Nothing saved yet. A good conversation is worth keeping.</p></div></section>
 <details id="diagnostics"><summary>Show notes & usage</summary><p id="usage">No API calls this visit.</p><div id="transcript" aria-label="Conversation transcript"></div><button id="download-notes" class="secondary">Download show notes</button></details>
-<footer><span>Original fictional hosts. Generated voices. Sources you can inspect.</span><button id="lock" class="text-button">Lock studio</button></footer>
+<footer><span>Original fictional hosts. Generated voices. Sources you can inspect.</span><span>Private access through Vercel</span></footer>
 </div>
 </main></body></html>

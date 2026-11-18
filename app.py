@@ -13,12 +13,13 @@ from urllib.parse import urlparse
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 ROOT = Path(__file__).parent
 app = FastAPI(title='Ask the Hosts', docs_url=None, redoc_url=None, openapi_url=None)
 API = 'https://api.openai.com/v1'
+PREVIEW_HOST = 'radio-git-codex-ask-the-hosts-pilot-mattvildibills-projects.vercel.app'
 HOSTS = [
     {'name': 'Mara', 'voice': 'gleam', 'angle': 'mara_angle',
      'character': 'Warm, precise, quietly funny. You look for mechanisms and what the evidence can actually carry. You make complicated ideas tangible without lecturing.'},
@@ -28,10 +29,12 @@ HOSTS = [
 
 
 def secret():
-    value = os.getenv('RADIO_PILOT_PASSWORD', '')
-    if len(value) < 24:
-        raise HTTPException(503, 'Private pilot access is not configured. Set RADIO_PILOT_PASSWORD (at least 24 characters) in radio Preview.')
-    return value.encode()
+    value = os.getenv('OPENAI_API_KEY', '')
+    if not value:
+        raise HTTPException(503, 'OPENAI_API_KEY is not configured in radio Preview.')
+    # Domain separation: the server API key never leaves the server. Derive a
+    # separate key for short-lived app capabilities; do not use it as a password.
+    return hmac.new(value.encode(), b'radio-pilot-capabilities-v1', hashlib.sha256).digest()
 
 
 def sign(data, kind, seconds):
@@ -51,7 +54,7 @@ def verify(token, kind):
             raise ValueError()
         return data
     except (ValueError, KeyError, TypeError):
-        raise HTTPException(401, 'Private access or show ticket expired. Unlock the pilot and research again.')
+        raise HTTPException(401, 'Private browser session or show ticket expired. Reload the studio and research again.')
 
 
 def authorize(request):
@@ -59,8 +62,33 @@ def authorize(request):
 
 
 def preview_only():
-    if os.getenv('VERCEL_ENV') == 'production':
-        raise HTTPException(403, 'This pilot runs only in Preview.')
+    if os.getenv('VERCEL_ENV') != 'preview' or os.getenv('VERCEL') != '1':
+        raise HTTPException(403, 'This pilot runs only on its protected Vercel Preview.')
+
+
+async def protected_preview(request):
+    """Verify the exact radio branch alias still enforces Vercel Authentication.
+
+    Vercel authenticates the incoming request before it reaches this app. A
+    second, credential-free request must be stopped at that same outer gate.
+    The probe never follows redirects, accepts client destinations, or carries
+    cookies/credentials. If protection is disabled, this app's probe returns 204
+    and admission fails closed. Check before every new billable operation.
+    """
+    preview_only()
+    if request.headers.get('host') != PREVIEW_HOST:
+        raise HTTPException(403, 'Open the stable radio branch Preview link to use this pilot.')
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
+            probe = await client.get('https://' + PREVIEW_HOST + '/api/privacy-probe',
+                                    params={'nonce': secrets.token_hex(8)},
+                                    headers={'Cache-Control': 'no-cache'})
+    except httpx.HTTPError:
+        raise HTTPException(503, 'Could not verify private Preview protection. No show was started.')
+    target = urlparse(probe.headers.get('location', ''))
+    if not (probe.status_code == 302 and target.scheme == 'https'
+            and target.hostname == 'vercel.com' and target.path == '/sso-api'):
+        raise HTTPException(503, 'Private Preview protection is not confirmed. Show starts are disabled.')
 
 
 def same_origin(request):
@@ -126,39 +154,31 @@ async def home():
     return FileResponse(ROOT / 'site/index.html')
 
 
+@app.get('/api/privacy-probe')
+async def privacy_probe():
+    # An unauthenticated caller must never reach this on a protected Preview.
+    return Response(status_code=204)
+
+
 @app.get('/api/status')
 async def status(request: Request):
-    unlocked = False
     try:
-        authorize(request)
-        unlocked = True
-    except HTTPException:
-        pass
-    return {'unlocked': unlocked, 'configured': len(os.getenv('RADIO_PILOT_PASSWORD', '')) >= 24,
-            'preview': os.getenv('VERCEL_ENV') != 'production', 'hosts': HOSTS,
-            'duration_seconds': 540}
-
-
-@app.post('/api/unlock')
-async def unlock(request: Request):
-    same_origin(request)
-    preview_only()
-    data = await body(request, 2000)
-    password = text_field(data, 'password', 256)
-    if not hmac.compare_digest(password.encode(), secret()):
-        raise HTTPException(401, 'Incorrect pilot passphrase')
-    response = JSONResponse({'unlocked': True})
-    response.set_cookie('radio_pilot', sign({'owner': secrets.token_hex(16)}, 'access', 43200),
-                        httponly=True, secure=bool(os.getenv('VERCEL')), samesite='strict', max_age=43200)
-    return response
-
-
-@app.post('/api/lock')
-async def lock(request: Request):
-    same_origin(request)
-    response = JSONResponse({'unlocked': False})
-    response.delete_cookie('radio_pilot')
-    return response
+        await protected_preview(request)
+        secret()  # Fail closed if the new Preview key has not reached this build.
+        try:
+            token = request.cookies.get('radio_pilot', '')
+            verify(token, 'access')
+        except HTTPException:
+            token = sign({'owner': secrets.token_hex(16)}, 'access', 43200)
+        response = JSONResponse({'unlocked': True, 'configured': True,
+                                 'preview': True, 'hosts': HOSTS, 'duration_seconds': 540})
+        response.set_cookie('radio_pilot', token, httponly=True, secure=True,
+                            samesite='strict', max_age=43200)
+        return response
+    except HTTPException as error:
+        return JSONResponse({'unlocked': False, 'configured': bool(os.getenv('OPENAI_API_KEY')),
+                             'preview': os.getenv('VERCEL_ENV') == 'preview',
+                             'message': error.detail}, status_code=error.status_code)
 
 
 BRIEF_SCHEMA = {
@@ -173,6 +193,7 @@ async def research(request: Request):
     same_origin(request)
     preview_only()
     owner = authorize(request)['owner']
+    await protected_preview(request)
     data = await body(request, 4000)
     question = text_field(data, 'question', 1200, 3)
     result = await openai('/responses', {
@@ -253,6 +274,7 @@ async def session(request: Request):
     same_origin(request)
     preview_only()
     owner = authorize(request)['owner']
+    await protected_preview(request)
     data = await body(request, 80000)
     show = verify(text_field(data, 'ticket', 50000), 'brief')
     if show['owner'] != owner:

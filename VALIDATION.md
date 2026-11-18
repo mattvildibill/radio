@@ -4,7 +4,7 @@ Date: November 18, 2026. Branch: `codex/ask-the-hosts-pilot`.
 
 ## Verified locally
 
-- `pytest -q`: **10 passed**. Authentication and origin checks; Production start
+- `pytest -q`: **18 passed**. Vercel protection admission and origin checks; Production start
   denial; missing configuration fails closed; signed research tickets cannot be
   forged or moved to a new browser session; research must finish with sources
   before tickets are issued; both hosts receive server-defined voices/context;
@@ -88,12 +88,29 @@ fixtures, not the newly added key. The $15 project budget was not changed.
 
 1. Restore access to the existing radio Vercel project (connector or browser).
 2. Confirm project identity, existing free plan, Git link, and Preview protection.
-3. Add a new radio-only `RADIO_PILOT_PASSWORD` in Preview; leave all existing
-   settings/keys/integrations alone. Use only existing Preview `OPENAI_API_KEY`.
-4. Redeploy this branch to Preview after adding its new passphrase, using the
-   exact existing project, then open and unlock the private studio.
+3. Use only the existing Preview `OPENAI_API_KEY`; leave all existing keys and
+   integrations alone. No separate pilot passphrase is required.
+4. Open the stable branch Preview in a Vercel-authenticated browser. The app
+   verifies the outer protection gate before admitting a browser session.
 5. Run a short sourced question (about 60–90 seconds), audition both voices and
    adjust levels/handoff timing based on actual audio. Inject a typed follow-up.
 6. Explicitly record, stop, confirm both final session usage events, reload the
    same preview origin and play the saved conversation. Retain usage/notes and
    report only observed results. Stop on any spend/quota error; do not retry it.
+
+## Access simplification after connection troubleshooting
+
+Removed the extra app passphrase setup. The app now relies on the existing Vercel
+Authentication gate, verifies that an unauthenticated probe to the exact fixed
+radio branch hostname is redirected to Vercel SSO, and fails closed for public,
+unknown, failed, non-Preview or different-host responses. A Secure/HttpOnly cookie
+identifies the authenticated browser for signed brief capabilities. Six new
+negative protection cases plus inert-probe and host-restriction checks pass.
+The combined suite is now **18 Python + 6 JavaScript tests**.
+
+The connector continues to return 404 after reinstall and explicit team consent.
+A fresh tool-controlled Cloud Chrome tab still redirects to login; the user's
+regular Codex Browser panel has a separate signed-in session. This is an agent
+access limitation. No additional login or passphrase is needed for the user to
+try the stable Preview from their existing signed-in browser. Real provider
+acceptance is still pending; no API success is inferred from these local checks.
