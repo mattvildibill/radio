@@ -161,9 +161,16 @@ async function connectHost(r, index) {
     if (!r.stopping && !host.finalized) void stopShow('Disconnected. Both host sessions are closing.');
   };
   pc.onconnectionstatechange = () => {
+    log('peer-state', {host: names[index], connection: pc.connectionState, ice: pc.iceConnectionState});
     if (['failed', 'disconnected'].includes(pc.connectionState) && !r.stopping) void stopShow('Audio disconnected. Both host sessions are closing.');
   };
+  pc.oniceconnectionstatechange = () => log('ice-state', {host: names[index], state: pc.iceConnectionState});
+  dc.onopen = () => log('event-channel-open', {host: names[index]});
   await pc.setLocalDescription(await pc.createOffer()); await iceComplete(pc);
+  const candidates = pc.localDescription.sdp.split('\r\n').filter(line => line.startsWith('a=candidate:'));
+  log('ice-offer', {host: names[index], candidates: candidates.length,
+    protocols: [...new Set(candidates.map(line => line.split(' ')[2]))]});
+  if (!candidates.length) throw new Error('This browser produced no audio-network candidates. WebRTC may be disabled or restricted by this browser or network. No host session was created.');
   if (r.stopping) return;
   // Do not abort an in-flight session creation: we need its ID to close it even
   // if Stop was pressed before the response reached the browser.
@@ -171,6 +178,9 @@ async function connectHost(r, index) {
   host.closeTicket = result.close_ticket;
   if (r.stopping) { await emergencyClose(host); return; }
   await pc.setRemoteDescription({type: 'answer', sdp: result.transport.sdp});
+  const remoteCandidates = result.transport.sdp.split('\r\n').filter(line => line.startsWith('a=candidate:'));
+  log('ice-answer', {host: names[index], candidates: remoteCandidates.length,
+    protocols: [...new Set(remoteCandidates.map(line => line.split(' ')[2]))]});
   let timeout;
   try {
     await Promise.race([ready, new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('The host did not become ready.')), 20000); })]);

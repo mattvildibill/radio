@@ -194,3 +194,16 @@ async def test_provider_failures_are_actionable_without_exposing_raw_message(cli
     assert phrase in error.value.detail
     assert 'key-or-provider-secret' not in error.value.detail
     assert len(calls) == 1
+
+
+@pytest.mark.asyncio
+async def test_negotiation_diagnostics_redact_server_credential(client, monkeypatch):
+    class Transport:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *args, **kwargs):
+            return httpx.Response(400, json={'error': {'message': 'Invalid field session.input; test-key-never-a-real-credential sk-hidden123'}})
+    monkeypatch.setattr(web.httpx, 'AsyncClient', lambda **kwargs: Transport())
+    with pytest.raises(web.HTTPException) as error: await web.openai('/live/sessions', {})
+    assert 'session.input' in error.value.detail
+    assert 'test-key' not in error.value.detail and 'sk-hidden' not in error.value.detail
