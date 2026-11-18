@@ -70,12 +70,28 @@ function renderResearch() {
   $('research-title').textContent = show.brief.title;
   $('research-date').textContent = 'RESEARCHED ' + new Date(show.researched_at).toLocaleString();
   $('brief').replaceChildren();
-  for (const [key, value] of Object.entries(show.brief)) {
-    if (key === 'title') continue;
+  const paragraph = (label, text) => {
     const p = document.createElement('p'), title = document.createElement('strong');
-    title.textContent = key.replaceAll('_', ' ') + ': ';
-    p.append(title, document.createTextNode(typeof value === 'string' ? value : JSON.stringify(value, null, 2))); $('brief').append(p);
+    title.textContent = label + ': '; p.append(title, document.createTextNode(text)); $('brief').append(p);
+    return p;
+  };
+  const plan = show.brief.conversation;
+  if (plan) {
+    paragraph('Approach', `${plan.mode} · ${plan.listener_intent}`);
+    paragraph('Opening idea', plan.opening);
+    paragraph('Possible threads', plan.paths);
+    paragraph('Mara’s curiosity', plan.mara_interest);
+    paragraph('Eli’s curiosity', plan.eli_interest);
   }
+  for (const evidence of show.brief.evidence || []) {
+    const p = paragraph('Evidence', `${evidence.claim}\n${evidence.date_or_context}\nLimits: ${evidence.limits}`);
+    if (safeSource(evidence.source_url)) {
+      const link = document.createElement('a'); link.href = evidence.source_url; link.target = '_blank';
+      link.rel = 'noopener noreferrer'; link.textContent = 'Read source'; p.append(document.createElement('br'), link);
+    }
+  }
+  paragraph('Uncertainties', show.brief.uncertainties);
+  paragraph('Public perspectives', show.brief.social_context);
   sourceList($('sources'), show.sources);
 }
 function renderUsage() {
@@ -216,7 +232,8 @@ async function relaySegment(r, firstHost = 0) {
 function renderFollowups(r) {
   const list = $('followup-queue'); list.replaceChildren();
   for (const item of (r.followups || []).slice(-8)) {
-    const li = document.createElement('li'); li.textContent = `${item.status}: ${item.text}`; list.append(li);
+    const labels = {waiting:'Waiting for the studio', sent:'Sending', queued:'Queued', addressing:'Passed to the hosts', rejected:'Queue full — not sent'};
+    const li = document.createElement('li'); li.textContent = `${labels[item.status]}: ${item.text}`; list.append(li);
   }
 }
 function queueRelayFollowup(r, text) {
