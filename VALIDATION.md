@@ -179,3 +179,99 @@ technical failure and unresolved cause. These are generated research results,
 not an independent fact-check of every incident. No voice sessions were started
 for that research-only check. Hosts are now cued to use concrete events in the
 first minute and throughout, with no invented anecdotes or causal connections.
+
+## November 18: adaptive editorial approach and replay upgrade
+
+Implemented topic-specific producer plans (taste/news/explainer/advice/speculation/mixed),
+complementary host interests rather than assigned counterarguments, source-linked
+evidence cards, varied floor cues, early/recent conversation memory, and a FIFO
+follow-up queue. Replays now append individual chunks and support rename, search,
+and persisted transcript/research/usage notes. The IndexedDB v1 upgrade retains
+old whole-blob recordings. The player now has one relay path.
+
+Real private Preview research checks returned the expected approach for movies,
+news, urban-heat explanation, EV advice for renters, and hypothetical human
+photosynthesis. The final four-question research matrix used 63,829 total tokens
+and five web-search calls. News included named dated incidents and primary sources
+from Equinor and Google alongside reporting; the other modes used relevant EPA,
+NASA, DOE and educational sources. This checks returned research and provenance,
+not an independent forensic verification of every claim.
+
+The first movie/news attempts exposed overly literal URL matching. Citation
+tracking parameters are now normalized while meaningful query parameters remain
+significant. Unlinked supplemental evidence is removed and disclosed; a brief
+with no linked evidence still cannot start voices. Two failed checks retained
+15,194 and 10,301 tokens; the first movie failure was not retained. An intermediate
+successful news check used 15,206 tokens. No automatic retries were made.
+
+### Long movie show and persistence
+
+The movie show ran from 15:24:04 to 15:33:05 America/Denver on November 18, 2026.
+Research completed before either host session started. The run used three pairs
+of sessions, 22 floor assignments, and three listener follow-ups. Both hosts
+received actual co-host audio (438 and 522 input-transcript fragments). Final
+provider usage was 533 seconds per host (1,066 total, approximately $0.89 voice
+at the documented $0.05/session-minute rate). Research used 14,972 tokens and one
+search. Both sessions in every pair confirmed close_requested before continuation.
+
+The transcript demonstrated building on a shared idea: Mara connected greatness
+to rhythm; Eli picked up that thought with the bone-to-spaceship cut in 2001.
+Queued questions about comedy and accessible films were delivered in order and
+changed the discussion to Some Like It Hot and Fury Road. A later request led to
+The Apartment. Eli proposed a starter trio and Mara offered Do the Right Thing
+as a different preference without treating his choices as wrong.
+
+The opt-in recording started after the opening and captured 8:39.44. It decoded
+with ffmpeg, measured -19.5 LUFS integrated and -1.4 dB true peak. Renaming it to
+“Movie night · conversational pilot” persisted. Search filtered out unrelated
+recordings. After page reload, playback advanced beyond 11 seconds with readyState
+4 and no media error. The exported persisted notes exactly matched the final
+show notes, including both final provider usages. Existing recordings remained.
+
+Late repetition and partial phrases were observed, not ignored: subsequent cues
+explicitly request fresh examples, continuation memory prioritizes the latest
+exchange, unfinished phrases get more breathing room, queued audio must drain,
+and the next host's off-air speech must settle before its gate opens. The full
+movie run spans earlier revisions; it is not a claim that every later tuning
+change received another nine-minute listening test. The audioUnderruns counter
+also includes gaps between generated utterances and cannot by itself diagnose
+an audible network glitch.
+
+### Short news show
+
+A separate 80-second run opened with the November 13 FAA disruption, described
+who was affected, and distinguished a technical failure from a confirmed attack.
+The typed follow-up prompted a named cyberattack comparison. Both hosts closed
+with final usage of 80 seconds each. Research used 15,131 tokens and one search.
+This verified that concrete events reached the spoken output rather than staying
+only in the producer brief. It also exposed off-air fragments at handoffs, leading
+to the audio-gate settling change and a dedicated regression test.
+
+Local verification: 46 Python tests and 14 JavaScript tests pass, including FIFO
+follow-ups, off-air audio exclusion, source validation, v1 replay migration,
+chunk ordering, storage-cap failure without overwriting captured audio, and
+continuation memory. JavaScript syntax and the locked Python dependencies pass.
+No new account, hosting/storage service, production deployment or shared setting
+was used. Subjective warmth, pacing and the absence of every audible artifact
+still require listening; transcript/media checks do not certify those qualities.
+
+### Final audio-gate regression (c7f3405)
+
+The built-in bounded 90-second pilot ended at a natural final pause after about
+80 seconds, recording 1:21 including capture/closure overhead. Research used
+14,916 tokens and one search. Both hosts produced on-air audio, both transcribed
+received co-host audio, and the hospital follow-up changed Eli's answer to
+continuous coverage, staffing rotas and costs. Both provider sessions confirmed
+close_requested with final usage of 80 seconds each. The recorded opening of
+Eli's turn began “Yeah. For a hospital…” without the stray leading fragments
+seen in the preceding run. This is a targeted regression observation, not proof
+that generation can never produce a disfluency.
+
+After a page reload, the application successfully decoded this final recording.
+Playback advanced past 24 seconds with readyState 4 and no media error; all eight
+transport/replay checks in the saved pilot report passed.
+Combined final provider usage for the movie, news and audio-gate tests was 1,386
+session-seconds, approximately $1.16 voice, plus separate research/search usage.
+The successful four-mode research matrix and these three show briefs used 108,848
+tokens; intermediate/failed research above is additional. These are retained
+request measurements, not an account balance or complete OpenAI billing export.
