@@ -9,7 +9,7 @@ import secrets
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import urlparse, parse_qsl, urlencode
 
 from editorial import PLAN_SCHEMA, EVIDENCE_SCHEMA, PRODUCER
 import httpx
@@ -119,6 +119,14 @@ def text_field(data, key, max_length, min_length=1):
     if not isinstance(value, str) or not min_length <= len(value.strip()) <= max_length:
         raise HTTPException(422, f'Invalid {key}')
     return value.strip()
+
+
+def source_identity(url):
+    """Ignore citation tracking/fragments, but preserve meaningful query parameters."""
+    parsed = urlparse(url)
+    query = urlencode(sorted((k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+                             if not k.lower().startswith('utm_')))
+    return (parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip('/'), query)
 
 
 def research_failure(code, message, result, **counts):
@@ -300,8 +308,14 @@ async def research(request: Request):
     evidence = brief.get('evidence')
     if not isinstance(plan, dict) or plan.get('mode') not in PLAN_SCHEMA['properties']['mode']['enum'] or any(not isinstance(plan.get(k), str) or not plan[k].strip() for k in PLAN_SCHEMA['required']):
         research_failure('research_plan_missing', 'The producer did not finish the conversation plan.', result)
+    source_lookup = {source_identity(url): url for url in sources}
+    if isinstance(evidence, list):
+        for entry in evidence:
+            if isinstance(entry, dict) and isinstance(entry.get('source_url'), str):
+                entry['source_url'] = source_lookup.get(source_identity(entry['source_url']), entry['source_url'])
     if not isinstance(evidence, list) or not evidence or any(not isinstance(e, dict) or any(not isinstance(e.get(k), str) or not e[k].strip() for k in EVIDENCE_SCHEMA['items']['required']) or e['source_url'] not in sources for e in evidence):
-        research_failure('research_evidence_unlinked', 'The producer did not link its evidence to returned search sources.', result)
+        research_failure('research_evidence_unlinked', 'The producer did not link its evidence to returned search sources.', result,
+                         source_links=list(sources), evidence_links=[e.get('source_url') for e in evidence if isinstance(e, dict)] if isinstance(evidence, list) else [])
     # Put the producer's cited evidence ahead of additional search discoveries.
     # Never manufacture source links from generated text.
     brief_text = json.dumps(brief)
