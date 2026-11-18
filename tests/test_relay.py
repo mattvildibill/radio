@@ -51,7 +51,7 @@ def test_pcm_routes_to_other_host_and_both_finalize(monkeypatch):
         return next(connections)
     monkeypatch.setattr(relay, 'connect', connect)
     browser = Browser()
-    asyncio.run(relay.run_relay(browser, [{'audio': {}}, {'audio': {}}], 'test-key', 0.2))
+    asyncio.run(relay.run_relay(browser, [{'audio': {}}, {'audio': {}}], 'test-key', 0.7))
     def audio(s): return [base64.b64decode(e['audio']) for e in s.sent if e['type'] == 'session.input_audio.append']
     assert audio(upstreams[0]) and all(p == relay.SILENCE for p in audio(upstreams[0]))
     assert any(p != relay.SILENCE for p in audio(upstreams[1]))
@@ -146,4 +146,21 @@ def test_followups_deliver_in_order_and_preserve_unanswered_items(monkeypatch):
     asyncio.run(scenario())
     assert [e['id'] for e in browser.events if e['type']=='followup-delivered'] == ['1','2']
     assert browser.events[-1]['pending_followups'] == [{'id':'3','text':'Question 3'}]
+    assert browser.events[-1]['finalized']
+
+
+def test_off_air_speech_is_drained_before_opening_the_audio_gate(monkeypatch):
+    class Backchannel(Upstream):
+        async def send(self, raw):
+            await super().send(raw)
+            event = json.loads(raw)
+            if event['type'] == 'session.instructions.append' and event['content'].startswith('LISTEN'):
+                await self.events.put(json.dumps({'type':'session.output_audio.delta',
+                    'delta':base64.b64encode(array('h', [-8192]*960).tobytes()).decode()}))
+    connections = iter([Backchannel(),Backchannel()])
+    monkeypatch.setattr(relay, 'connect', lambda *args, **kwargs: next(connections))
+    browser=Browser()
+    asyncio.run(relay.run_relay(browser,[{'audio':{}},{'audio':{}}],'test-key',0.7))
+    aired=[array('h',base64.b64decode(e['pcm'])) for e in browser.events if e['type']=='audio']
+    assert aired and all(min(frame)>=0 for frame in aired)
     assert browser.events[-1]['finalized']

@@ -99,10 +99,10 @@ function renderUsage() {
     voice: notes.usage.map((u, i) => ({host: names[i], ...u}))};
   $('usage').textContent = JSON.stringify(usage, null, 2);
 }
-function transcript(index, e) {
+function transcript(index, e, onAir) {
   // Input transcripts are evidence of what each host actually heard. Output
   // fragments are captions, not an invented completed-turn transcript.
-  const onAir = run?.controller?.active === index && !run?.stopping;
+  onAir = Boolean(onAir && !run?.stopping);
   notes.transcripts.push({at: new Date().toISOString(), host: names[index], onAir, type: e.type, delta: e.delta, start_ms: e.start_ms, end_ms: e.end_ms});
   if (e.type !== 'session.output_transcript.delta' || !onAir) return;
   if (!lastTranscript || lastTranscript.index !== index) {
@@ -167,7 +167,7 @@ async function relaySegment(r, firstHost = 0) {
           final: e.type === 'session.closed' && measured, reason: e.reason};
         if (e.type === 'session.closed') log('session-closed', {host: names[index], reason: e.reason, segment: r.segment});
         renderUsage();
-      } else if (e.type.includes('transcript.delta')) transcript(index, e);
+      } else if (e.type.includes('transcript.delta')) transcript(index, e, event.on_air);
       else log('host-event', {host:names[index], event:e});
     } else if (event.type === 'ready') {
       clearTimeout(setupTimer);

@@ -26,6 +26,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
     pending = deque()
     active = first_host
     spoken = ['', '']
+    output_sound = [0.0, 0.0]
     lock = asyncio.Lock()
     alive = True
 
@@ -80,8 +81,12 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                         failure = 'A host session ended unexpectedly.'
                         stop.set()
                 elif kind == 'session.output_audio.delta':
+                    pcm = base64.b64decode(event['delta'])
+                    samples = array('h', pcm)
+                    if samples and math.sqrt(sum(v * v for v in samples) / len(samples)) / 32768 > 0.009:
+                        output_sound[index] = time.monotonic()
                     if index == active and go.is_set() and not stop.is_set():
-                        buffers[index].extend(base64.b64decode(event['delta']))
+                        buffers[index].extend(pcm)
                         if len(buffers[index]) > 480000:
                             failure = 'Audio playback fell too far behind. The show stopped.'
                             stop.set()
@@ -89,7 +94,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                     if kind == 'session.output_transcript.delta' and index == active:
                         spoken[index] += event.get('delta', '')
                     safe = {k: event[k] for k in ('type', 'delta', 'start_ms', 'end_ms', 'usage') if k in event}
-                    await emit({'type': 'host-event', 'host': index, 'on_air': index == active, 'event': safe})
+                    await emit({'type': 'host-event', 'host': index, 'on_air': index == active and go.is_set() and not stop.is_set(), 'event': safe})
                 elif kind and ('appended' in kind or kind.endswith('.done')):
                     await emit({'type': 'host-event', 'host': index, 'event': {
                         k: event[k] for k in ('type', 'start_ms', 'end_ms', 'client_event_id') if k in event}})
@@ -132,11 +137,29 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
 
     async def floor(index, opening=False, wrap=False):
         nonlocal active, pending
-        active = index
+        active = -1
         spoken[index] = ''
         buffers[0].clear()
         buffers[1].clear()
-        await send(1 - index, 'session.instructions.append', 'LISTEN. Stay silent until your next ON AIR cue.')
+        for i in range(2):
+            await send(i, 'session.instructions.append', 'LISTEN. Stop speaking immediately without acknowledging this cue. Stay silent until your next ON AIR cue.')
+        # GPT-Live is full duplex and may already be backchanneling off air.
+        # Drain that speech before opening the incoming host's gate. Keep its
+        # input clock moving while waiting; append acknowledgments are not proof
+        # that the previous utterance has actually stopped.
+        settling = time.monotonic()
+        while time.monotonic() - settling < 2.5:
+            if stop.is_set():
+                return
+            await asyncio.gather(*(sockets[i].send(json.dumps({'type':'session.input_audio.append',
+                'audio':base64.b64encode(SILENCE).decode()})) for i in range(2)))
+            await asyncio.sleep(0.04)
+            now = time.monotonic()
+            if now - settling >= 0.35 and now - output_sound[index] >= 0.3:
+                break
+        else:
+            raise RuntimeError('Incoming host did not yield the audio floor')
+        active = index
         followup = pending.popleft() if pending else None
         if followup:
             for i in range(2):
@@ -174,6 +197,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
             heard = recovered = nudged = continued = False
             turn, last_meter = 1, -1
             await floor(active, opening=first)
+            since = last_sound = next_frame = time.monotonic()
             while not stop.is_set():
                 tick = time.monotonic()
                 elapsed = tick - started
@@ -218,7 +242,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                         continue
                     turn += 1
                     await floor(other, wrap=duration < 210 and duration - elapsed < 65)
-                    since = last_sound = time.monotonic()
+                    since = last_sound = next_frame = time.monotonic()
                     heard = recovered = nudged = continued = False
                 elif not heard and tick - since > 20:
                     failure = 'A host stayed silent. Both sessions were closed without retrying.'
