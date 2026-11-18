@@ -31,6 +31,25 @@ bypasses authentication for the fixture UI and supplies a deliberate quota
 failure. It is never imported or mounted by the production/Preview entrypoint.
 The saved test tones are **not AI speech** and are not evidence of host chemistry.
 
+## Protected Preview deployment
+
+The existing radio Git integration deployed application commit
+`63827128c80ac3133df2799779f63b4ac19869d5` successfully. GitHub's Vercel status
+reported “Deployment has completed”; the Vercel bot reported **Ready**, the same
+radio project/team IDs, and this branch Preview:
+
+https://radio-git-codex-ask-the-hosts-pilot-mattvildibills-projects.vercel.app
+
+Deployment details:
+https://vercel.com/mattvildibills-projects/radio/6pPBZmpLdcZcYNYL4JfUTgh42q2k
+
+Draft PR: https://github.com/mattvildibill/radio/pull/1
+
+An unauthenticated HTTPS request to the Preview returned **302 to Vercel SSO**,
+confirming the deployment is protected. It did not reach the application. No
+Production deployment was requested. Project identity here is evidenced by the
+Git integration, not a successful direct Vercel project API inspection.
+
 ## External access blockers
 
 - Vercel connector returns HTTP 404 for `radio` by name and by the project ID
@@ -38,9 +57,13 @@ The saved test tones are **not AI speech** and are not evidence of host chemistr
   `mattvildibills-projects` slug. A name-scoped list returned no project.
 - Only radio was targeted. No other repo/project was inspected or changed.
 - With user-approved browser fallback, the exact radio dashboard redirected to
-  Vercel sign-in. The secure sign-in request returned `declined`. No credentials
+  Vercel sign-in. Two secure sign-in requests (the second explicitly requested by the user)
+  returned `declined`. No credentials
   were retrieved, exposed, or entered by the agent.
 - No usable Vercel CLI credential is available in this execution environment.
+- Automatic approval review rejected the protected-fetch connector because it
+  creates or reuses a temporary share link. No share link was created or reused
+  by that attempt. Authentication/protection was not weakened.
 
 ## Not yet verified — required before acceptance
 
@@ -55,8 +78,8 @@ The saved test tones are **not AI speech** and are not evidence of host chemistr
 - Both real sessions reporting final usage after stop, timeout, or disconnect.
 - Full nine-minute real operation, physical mobile/Safari playback, interrupted
   WebRTC recovery, or browser-crash billing behavior.
-- Preview project protection, deployed environment configuration, deployment
-  identity and status. No production rollout is authorized.
+- Application access and deployed environment configuration behind Preview
+  protection. No production rollout is authorized.
 
 **OpenAI usage incurred by this work so far: zero requests, $0.** Local tests use
 fixtures, not the newly added key. The $15 project budget was not changed.
@@ -67,8 +90,8 @@ fixtures, not the newly added key. The $15 project budget was not changed.
 2. Confirm project identity, existing free plan, Git link, and Preview protection.
 3. Add a new radio-only `RADIO_PILOT_PASSWORD` in Preview; leave all existing
    settings/keys/integrations alone. Use only existing Preview `OPENAI_API_KEY`.
-4. Deploy this branch to Preview in that exact existing project, then open and
-   unlock the private studio.
+4. Redeploy this branch to Preview after adding its new passphrase, using the
+   exact existing project, then open and unlock the private studio.
 5. Run a short sourced question (about 60–90 seconds), audition both voices and
    adjust levels/handoff timing based on actual audio. Inject a typed follow-up.
 6. Explicitly record, stop, confirm both final session usage events, reload the

@@ -6,9 +6,9 @@ Mara (Gleam) and Eli (Vesper). They receive the same factual brief and separate
 angles. Their actual received audio is cross-routed through Web Audio; no script
 or text-to-speech substitution supplies the co-host's words.
 
-**Current status:** implementation and local checks are complete; real OpenAI
-voice audition, private Preview deployment, and real-API acceptance remain
-unverified. See [VALIDATION.md](VALIDATION.md). Do not describe the local tone test
+**Current status:** implementation and local checks are complete. The existing
+Git integration deployed a protected Preview successfully. Real OpenAI voice
+audition and real-API acceptance remain unverified. See [VALIDATION.md](VALIDATION.md). Do not describe the local tone test
 as an AI show.
 
 ## Scope
