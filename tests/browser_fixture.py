@@ -21,5 +21,7 @@ async def research(request: Request):
 @fixture.get('/storage-check')
 def check():
     return HTMLResponse('''<!doctype html><html><head><title>Radio local audio storage check</title><script type="module" src="/checks/browser_fixture.js"></script></head><body><h1>Local recording check</h1><p>Two synthetic test tones. No AI voices. No API calls.</p><button id="test">Record & save a test mix</button><p id="result" role="status">Ready</p><a href="/">Open the actual replay library</a></body></html>''')
+@fixture.get('/network-check')
+def network_check(): return FileResponse(ROOT / 'tests/network_fixture.html')
 fixture.mount('/assets', StaticFiles(directory=ROOT / 'site/assets'))
 fixture.mount('/checks', StaticFiles(directory=ROOT / 'tests'))

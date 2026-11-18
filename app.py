@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI, HTTPException, Request, WebSocket
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
@@ -367,6 +367,42 @@ async def close(request: Request):
         raise HTTPException(400, 'Invalid session identifier')
     await openai('/live/sessions/' + session_id + '/hangup', timeout=10)
     return {'closed': True}
+
+
+@app.websocket('/api/live')
+async def live_relay(socket: WebSocket):
+    from relay import run_relay
+    try:
+        same_origin(socket)
+        preview_only()
+        owner = authorize(socket)['owner']
+        await protected_preview(socket)
+        await socket.accept()
+        import asyncio
+        raw = await asyncio.wait_for(socket.receive_text(), 10)
+        if len(raw) > 80000:
+            raise ValueError('Oversized relay request')
+        data = json.loads(raw)
+        show = verify(text_field(data, 'ticket', 50000), 'brief')
+        if show['owner'] != owner:
+            raise ValueError('Wrong browser session')
+        duration = data.get('duration')
+        history = data.get('history', '')
+        first_host = data.get('first_host', 0)
+        if type(duration) not in (int, float) or not 1 <= duration <= 210:
+            raise ValueError('Invalid duration')
+        if not isinstance(history, str) or len(history) > 18000 or type(first_host) is not int or first_host not in (0, 1):
+            raise ValueError('Invalid relay context')
+        await run_relay(socket, [host_config(show, i) for i in range(2)], os.environ['OPENAI_API_KEY'],
+                        duration, history, first=not bool(history), first_host=first_host)
+    except Exception:
+        # Do not log credentials, tickets, or transport data from a failed socket.
+        pass
+    finally:
+        try:
+            await socket.close()
+        except Exception:
+            pass
 
 
 app.mount('/assets', StaticFiles(directory=ROOT / 'site/assets'), name='assets')

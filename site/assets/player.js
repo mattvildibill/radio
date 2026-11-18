@@ -110,6 +110,112 @@ async function iceComplete(pc) {
     pc.addEventListener('icegatheringstatechange', change); change();
   });
 }
+
+async function hasDirectAudio(r) {
+  const pc = new RTCPeerConnection();
+  try {
+    pc.createDataChannel('network-check');
+    pc.addTrack(r.inputs[0].stream.getAudioTracks()[0], r.inputs[0].stream);
+    await pc.setLocalDescription(await pc.createOffer()); await iceComplete(pc);
+    return pc.localDescription.sdp.includes('a=candidate:');
+  } finally { pc.close(); }
+}
+
+function playRelayAudio(r, encoded) {
+  const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
+  const view = new DataView(bytes.buffer), buffer = r.context.createBuffer(1, bytes.length / 2, 24000);
+  const samples = buffer.getChannelData(0);
+  for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
+  const source = r.context.createBufferSource(); source.buffer = buffer; source.connect(r.mix);
+  const at = Math.max(r.context.currentTime + 0.08, r.playAt || 0);
+  source.start(at); r.playAt = at + buffer.duration;
+  source.onended = () => source.disconnect();
+}
+
+async function relaySegment(r, firstHost = 0) {
+  const remaining = r.limit - (r.started ? (Date.now() - r.started) / 1000 : 0);
+  if (remaining <= 1 || r.stopping) { await stopShow('The show has finished.'); return; }
+  r.segment = (r.segment || 0) + 1;
+  const ws = new WebSocket(location.origin.replace(/^http/, 'ws') + '/api/live'); r.relay = ws;
+  r.relayFinalized = false;
+  const setupTimer = setTimeout(() => {
+    r.error = 'The audio relay did not become ready in time. Both sessions are closing.';
+    fail(r.error); void stopShow(r.error);
+  }, 55000);
+  let resolveClosed;
+  r.relayClosed = new Promise(resolve => { resolveClosed = resolve; });
+  let receivedClose = false;
+  const usageBase = notes.usage.map(u => u?.seconds || 0);
+  const history = r.segment === 1 ? '' : notes.transcripts.filter(t => t.type === 'session.output_transcript.delta' && t.onAir)
+    .map(t => `${t.host}: ${t.delta}`).join('\n').slice(-14000) + '\nListener follow-ups: ' + notes.events.filter(e => e.type === 'followup-delivered').map(e => e.text).join('\n').slice(-3000);
+  ws.onopen = () => ws.send(JSON.stringify({ticket: show.ticket, duration: Math.min(210, remaining), history, first_host: firstHost}));
+  ws.onmessage = async ({data}) => {
+    let event; try { event = JSON.parse(data); } catch { return; }
+    if (event.type === 'host-event') {
+      const e = event.event, index = event.host;
+      if (e.type === 'session.started') log('session-started', {host: names[index], transport: 'relay', segment: r.segment});
+      else if (e.type === 'session.usage.updated' || e.type === 'session.closed') {
+        notes.usage[index] = {seconds: usageBase[index] + (e.usage?.seconds || 0), final: e.type === 'session.closed', reason: e.reason};
+        if (e.type === 'session.closed') log('session-closed', {host: names[index], reason: e.reason, segment: r.segment});
+        renderUsage();
+      } else if (e.type.includes('transcript.delta')) transcript(index, e);
+    } else if (event.type === 'ready') {
+      clearTimeout(setupTimer);
+      if (r.stopping) { ws.send(JSON.stringify({type:'stop'})); return; }
+      if (!r.started) {
+        r.started = Date.now(); r.controller = {active: -1, stop() { this.active = -1; }};
+        if (r.pilot) {
+          await changeRecording();
+          if (!recording) { r.error = 'Pilot recording could not start.'; await stopShow(r.error); return; }
+          r.recordingId = recording.record.id;
+          r.followupTimer = setTimeout(() => queueRelayFollowup(r, PILOT_FOLLOWUP), 35000);
+        }
+        setStatus(r.pilot ? '90-second pilot · recording' : 'Live from the studio'); $('signal').classList.add('live');
+        $('record').disabled = !window.MediaRecorder; $('followup').disabled = false; $('send').disabled = false;
+        r.interval = setInterval(() => { $('clock').textContent = duration((Date.now() - r.started) / 1000) + ' / ' + duration(r.limit); }, 250);
+        r.timeout = setTimeout(() => void stopShow('The show has finished.'), r.limit * 1000);
+        r.context.onstatechange = () => { if (r.context.state === 'suspended' && !r.stopping) void stopShow('Audio was suspended. Both sessions are closing.'); };
+      }
+      ws.send(JSON.stringify({type:'go'}));
+      if (pendingFollowup) { queueRelayFollowup(r, pendingFollowup); pendingFollowup = ''; }
+    } else if (event.type === 'floor') {
+      r.controller.active = event.host;
+      log('floor', {host: names[event.host], segment: r.segment});
+      names.forEach((_, i) => { $('host-' + i).classList.toggle('speaking', i === event.host); $('host-' + i).querySelector('.host-state').textContent = i === event.host ? 'On air' : 'Listening'; });
+    } else if (event.type === 'audio' && !r.stopping) {
+      playRelayAudio(r, event.pcm);
+    } else if (event.type === 'meter') {
+      const rms = [0, 0]; rms[event.host] = event.rms; log('audio-level', {rms, floor:event.host});
+    } else if (event.type === 'followup-delivered') {
+      log('followup-delivered', {text:event.text, nextHost:names[event.host]});
+      $('followup-status').textContent = `${names[event.host]} is taking your follow-up into the next exchange.`;
+    } else if (event.type === 'relay-error') {
+      r.error = event.message; fail(event.message);
+    } else if (event.type === 'relay-closed') {
+      clearTimeout(setupTimer); r.relayFinalized = event.finalized;
+      receivedClose = true; resolveClosed(); ws.close();
+      if (!r.stopping) {
+        if (event.reason === 'segment_complete' && event.finalized && !r.error) {
+          log('relay-continuation', {segment: r.segment});
+          void relaySegment(r, event.next_host);
+        } else void stopShow(r.error || (event.finalized ? 'The show has finished.' : 'Host finalization was not confirmed.'));
+      }
+    }
+  };
+  ws.onerror = () => { r.error = 'The secure audio relay could not connect. No automatic retry was made.'; fail(r.error); };
+  ws.onclose = () => {
+    clearTimeout(setupTimer);
+    resolveClosed();
+    if (!receivedClose && !r.stopping) { r.error ||= 'The audio relay disconnected. Both host connections are closing.'; void stopShow(r.error); }
+  };
+}
+
+function queueRelayFollowup(r, text) {
+  if (!text || r.stopping) return;
+  log('followup-queued', {text}); $('followup-status').textContent = 'Queued for the next natural handoff.';
+  if (r.relay?.readyState === WebSocket.OPEN) r.relay.send(JSON.stringify({type:'followup', text}));
+  else pendingFollowup = text;
+}
 async function connectHost(r, index) {
   const pc = new RTCPeerConnection();
   const dc = pc.createDataChannel('oai-events');
@@ -231,10 +337,16 @@ async function startShow(event, pilot = false) {
   r.master = context.createGain(); r.master.gain.value = Number($('volume').value);
   r.capture = context.createMediaStreamDestination(); r.mix.connect(r.master); r.master.connect(context.destination); r.mix.connect(r.capture);
   try {
+    setStatus('Preparing studio audio…');
+    r.directAudio = await hasDirectAudio(r);
+    if (r.stopping) return;
+    log('audio-transport', {mode: r.directAudio ? 'webrtc' : 'relay'});
+    setStatus('The producer is researching…');
     show = await api('/api/research', {question: $('question').value.trim()}, {signal: r.abort.signal});
     if (r.stopping) return;
     log('research-completed', {researched_at: show.researched_at, sources: show.sources.length}); renderResearch(); renderUsage();
     setStatus('Brief ready. Connecting Mara and Eli…');
+    if (!r.directAudio) { await relaySegment(r); return; }
     r.setup = Promise.allSettled([connectHost(r, 0), connectHost(r, 1)]);
     const results = await r.setup;
     const failure = results.find(result => result.status === 'rejected');
@@ -296,6 +408,11 @@ async function stopShow(message = 'The show has ended.') {
   setStatus('Closing both host sessions…'); $('signal').classList.remove('live');
   const saved = stopRecording();
   r.master.gain.value = 0;
+  if (r.relay) {
+    if (r.relay.readyState === WebSocket.OPEN) r.relay.send(JSON.stringify({type:'stop'}));
+    await Promise.race([r.relayClosed, sleep(10000)]);
+    r.relay.close();
+  }
   for (const h of r.hosts) { if (h?.gate) h.gate.gain.value = 0; if (h?.ready) send(h, 'session.close'); }
   // Also close any host whose creation resolves after Stop was pressed.
   await r.setup;
@@ -312,7 +429,7 @@ async function stopShow(message = 'The show has ended.') {
   r.inputs.forEach(input => input.stream.getTracks().forEach(t => t.stop()));
   r.capture.stream.getTracks().forEach(t => t.stop()); await r.context.close(); await saved;
   log('show-ended'); renderUsage();
-  const incomplete = r.hosts.some(h => h.ready && !h.finalized);
+  const incomplete = (r.relay && !r.relayFinalized) || r.hosts.some(h => h.ready && !h.finalized);
   setStatus(message + (incomplete ? ' Final provider usage is unconfirmed.' : ''));
   names.forEach((_, i) => { $('host-' + i).classList.remove('speaking'); $('host-' + i).querySelector('.host-state').textContent = 'Off air'; });
   if (r.pilot) {
@@ -447,6 +564,7 @@ $('record').onclick = () => void toggleRecording();
 $('volume').oninput = () => { if (run) run.master.gain.value = Number($('volume').value); };
 $('followup-form').onsubmit = e => {
   e.preventDefault(); if (!run?.started || run.stopping) return;
+  if (run.relay) { queueRelayFollowup(run, $('followup').value.trim()); $('followup').value = ''; return; }
   pendingFollowup = $('followup').value.trim(); if (!pendingFollowup) return;
   $('followup').value = ''; $('followup-status').textContent = 'Queued for the next natural handoff.'; log('followup-queued', {text: pendingFollowup});
 };
@@ -460,6 +578,7 @@ window.addEventListener('pagehide', () => {
   const r = run; if (!r) return;
   r.stopping = true; r.controller?.stop(); clearInterval(r.interval); clearTimeout(r.timeout); clearTimeout(r.followupTimer);
   if (recording?.recorder.state === 'recording') recording.recorder.stop();
+  if (r.relay?.readyState === WebSocket.OPEN) { r.relay.send(JSON.stringify({type:'stop'})); r.relay.close(); }
   for (const host of r.hosts) {
     send(host, 'session.close');
     if (host?.closeTicket) navigator.sendBeacon('/api/close', new Blob([JSON.stringify({ticket: host.closeTicket})], {type: 'application/json'}));
