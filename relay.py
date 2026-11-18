@@ -203,7 +203,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 if heard and tick - since > 28 and not nudged:
                     nudged = True
                     await send(active, 'session.instructions.append', 'Finish this thought in one short sentence, then pause for your co-host.')
-                if (heard and tick - since > 1.5 and tick - last_sound > handoff_pause(spoken[active])) or tick - since > 40:
+                if (heard and not buffers[active] and tick - since > 1.5 and tick - last_sound > handoff_pause(spoken[active])) or tick - since > 40:
                     # Rotate only at a natural handoff, below Hobby's 300s cap.
                     if duration == 210 and elapsed >= 180:
                         stop.set()
