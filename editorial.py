@@ -44,7 +44,7 @@ def floor_cue(turn, opening=False, followup=False, wrap=False):
     return 'ON AIR. ' + [
         'Pick up what your co-host actually said. A short reaction, shared enthusiasm, or one added detail may be enough. No compulsory counterpoint.',
         'Follow the interesting thread: answer their question, offer an example, or ask something you genuinely want them to explore. Do not manufacture a disagreement.',
-        'Build on the conversation in your own voice. Give a different preference only if it adds something; agreement is welcome. Avoid repeating settled points.'
+        'Move the conversation forward with a fresh specific example or an unanswered question from the optional paths. Connect it to the last point, but do not spend another turn praising or restating an example already discussed. A new preference is welcome; an opposing opinion is not required.'
     ][(turn - 2) % 3]
 
 
