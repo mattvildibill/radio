@@ -166,9 +166,14 @@ async function relaySegment(r, firstHost = 0) {
     let event; try { event = JSON.parse(data); } catch { return; }
     if (event.type === 'host-event') {
       const e = event.event, index = event.host;
-      if (e.type === 'session.started') log('session-started', {host: names[index], transport: 'relay', segment: r.segment});
+      if (e.type === 'session.started') {
+        if (notes.usage[index]) notes.usage[index].final = false;
+        log('session-started', {host: names[index], transport: 'relay', segment: r.segment});
+      }
       else if (e.type === 'session.usage.updated' || e.type === 'session.closed') {
-        notes.usage[index] = {seconds: usageBase[index] + (e.usage?.seconds || 0), final: e.type === 'session.closed', reason: e.reason};
+        const measured = Number.isFinite(e.usage?.seconds);
+        notes.usage[index] = {seconds: measured ? usageBase[index] + e.usage.seconds : null,
+          final: e.type === 'session.closed' && measured, reason: e.reason};
         if (e.type === 'session.closed') log('session-closed', {host: names[index], reason: e.reason, segment: r.segment});
         renderUsage();
       } else if (e.type.includes('transcript.delta')) transcript(index, e);
@@ -340,8 +345,8 @@ async function startShow(event, pilot = false) {
   event.preventDefault(); if (run) return;
   document.querySelectorAll('.replay audio').forEach(audio => audio.pause());
   $('error').textContent = ''; $('recording-status').textContent = ''; pendingFollowup = '';
-  if (!window.RTCPeerConnection || !window.AudioContext || !window.isSecureContext) {
-    fail('This browser needs WebRTC and Web Audio on HTTPS. Try current Chrome or Safari.'); return;
+  if (!window.WebSocket || !window.AudioContext || !window.isSecureContext) {
+    fail('This browser needs secure audio streaming and Web Audio on HTTPS. Try current Chrome or Safari.'); return;
   }
   const context = new AudioContext(); await context.resume();
   const r = {context, hosts: [], inputs: [context.createMediaStreamDestination(), context.createMediaStreamDestination()],
@@ -357,7 +362,7 @@ async function startShow(event, pilot = false) {
     setStatus('Preparing studio audio…');
     // Use the verified same-project relay by default. Direct WebRTC remains
     // opt-in for transport testing on browsers with working ICE networking.
-    r.directAudio = new URLSearchParams(location.search).get('transport') === 'webrtc' && await hasDirectAudio(r);
+    r.directAudio = new URLSearchParams(location.search).get('transport') === 'webrtc' && Boolean(window.RTCPeerConnection) && await hasDirectAudio(r);
     if (r.stopping) return;
     log('audio-transport', {mode: r.directAudio ? 'webrtc' : 'relay'});
     if (!r.directAudio) await checkRelay();

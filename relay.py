@@ -26,6 +26,23 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
     lock = asyncio.Lock()
     alive = True
 
+    async def wait_or_stop(awaitable, timeout):
+        waiting = asyncio.ensure_future(awaitable)
+        stopping = asyncio.create_task(stop.wait())
+        try:
+            done, _ = await asyncio.wait([waiting, stopping], timeout=timeout,
+                                         return_when=asyncio.FIRST_COMPLETED)
+            if stop.is_set():
+                return False
+            if waiting not in done:
+                raise asyncio.TimeoutError()
+            await waiting
+            return True
+        finally:
+            waiting.cancel()
+            stopping.cancel()
+            await asyncio.gather(waiting, stopping, return_exceptions=True)
+
     async def emit(event):
         nonlocal alive
         if not alive:
@@ -72,6 +89,8 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                     await emit({'type': 'host-event', 'host': index, 'event': {
                         k: event[k] for k in ('type', 'start_ms', 'end_ms', 'client_event_id') if k in event}})
                 elif kind == 'error':
+                    if stop.is_set():
+                        continue
                     code = str((event.get('error') or {}).get('code') or 'unknown')
                     failure = 'OpenAI rejected a live command (' + (code if code.replace('_', '').isalnum() else 'unknown') + '). No retry was made.'
                     stop.set()
@@ -126,6 +145,8 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
         try:
             tasks.append(asyncio.create_task(receive_browser()))
             for index, original in enumerate(configs):
+                if stop.is_set():
+                    break
                 config = json.loads(json.dumps(original))
                 config.pop('client', None)
                 config['audio']['format'] = {'type': 'audio/pcm', 'rate': 24000}
@@ -138,13 +159,13 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 sockets.append(socket)
                 tasks.append(asyncio.create_task(receive_host(index)))
                 await socket.send(json.dumps({'type': 'session.start', 'session': config}))
-            await asyncio.wait_for(asyncio.gather(*(event.wait() for event in ready)), 20)
-            if stop.is_set():
+            if not await wait_or_stop(asyncio.gather(*(event.wait() for event in ready)), 20):
                 return
             await emit({'type': 'ready'})
-            await asyncio.wait_for(go.wait(), 10)
+            if not await wait_or_stop(go.wait(), 10):
+                return
             started = since = last_sound = time.monotonic()
-            heard = recovered = False
+            heard = recovered = nudged = False
             turn, last_meter = 1, -1
             await floor(active, opening=first)
             while not stop.is_set():
@@ -173,6 +194,9 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 if int(elapsed) != last_meter:
                     last_meter = int(elapsed)
                     await emit({'type': 'meter', 'host': active, 'rms': round(rms, 4)})
+                if heard and tick - since > 28 and not nudged:
+                    nudged = True
+                    await send(active, 'session.instructions.append', 'Finish this thought in one short sentence, then pause for your co-host.')
                 if (heard and tick - since > 3.5 and tick - last_sound > 1.0) or tick - since > 40:
                     # Rotate only at a natural handoff, below Hobby's 300s cap.
                     if duration == 210 and elapsed >= 180:
@@ -184,13 +208,13 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                     turn += 1
                     await floor(other, wrap=duration < 210 and duration - elapsed < 65)
                     since = last_sound = time.monotonic()
-                    heard = recovered = False
+                    heard = recovered = nudged = False
                 elif not heard and tick - since > 20:
                     failure = 'A host stayed silent. Both sessions were closed without retrying.'
                     stop.set()
                 elif not heard and tick - since > 10 and not recovered:
                     recovered = True
-                    await send(active, 'session.instructions.append', 'ON AIR. The room is quiet. Speak now: give a concise response grounded in the brief.')
+                    await send(active, 'session.commentary.append', 'ON AIR. The room is quiet. Give one concise response grounded in the brief, then pause.')
                 await asyncio.sleep(max(0, 0.04 - (time.monotonic() - tick)))
         except Exception:
             failure = failure or 'The audio relay could not complete the connection. No retry was made.'

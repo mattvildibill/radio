@@ -1,15 +1,15 @@
 # Ask the Hosts — private radio Preview pilot
 
 A typed question goes to an OpenAI Responses producer with web search. Only after a
-completed, sourced brief does the browser open **two GPT-Live WebRTC sessions**:
+completed, sourced brief does the browser open **two GPT-Live sessions**:
 Mara (Gleam) and Eli (Vesper). They receive the same factual brief and separate
-angles. Their actual received audio is cross-routed through Web Audio; no script
+angles. Their actual received audio is cross-routed through the private server relay; no script
 or text-to-speech substitution supplies the co-host's words.
 
-**Current status:** implementation and local checks are complete. The existing
-Git integration deployed a protected Preview successfully. Real OpenAI voice
-audition and real-API acceptance remain unverified. See [VALIDATION.md](VALIDATION.md). Do not describe the local tone test
-as an AI show.
+**Current status:** the private Preview completed a real 90-second, two-host
+OpenAI show, answered the hospital follow-up, finalized both sessions, and
+replayed the saved conversation after reload. Full-duration verification is
+recorded in [VALIDATION.md](VALIDATION.md).
 
 ## Scope
 
@@ -67,13 +67,21 @@ single-use admission control. No Vercel protection settings are changed by code.
 - GPT-Live: `gpt-live-1`, `store: false`, client delegation. No paid backend
   delegation is launched during the show. Follow-ups needing new facts are
   acknowledged as uncertain rather than invented.
-- A show runs for **nine minutes**. Vercel handles short research/signaling/close
-  requests; audio travels browser ↔ OpenAI and does not require a nine-minute
-  serverless invocation or server WebSocket.
+- A show runs for **up to nine minutes**, ending at a natural closing pause in
+  the final 15 seconds. A same-project WebSocket relay carries PCM audio. It uses Fluid Compute,
+  capped at the Hobby-compatible 300 seconds per invocation. Relay segments
+  end at a natural handoff after three minutes (hard cap 210 seconds); both
+  sessions finalize before the next pair starts with the aired conversation
+  and follow-ups as context. The whole show remains capped at nine minutes.
+  No database, new hosting service, or paid Vercel feature is needed.
+  Direct WebRTC remains an opt-in development path (`?transport=webrtc`); the
+  default user flow uses the relay verified on the private Preview.
 - The controller assigns the floor, routes only on-air audio to the listener and
-  co-host, and waits for measured media silence before handoff. A 40-second floor
-  cap bounds monologues. One silence cue is allowed, then the show stops; it never
-  creates replacement paid sessions automatically.
+  co-host, and waits for measured media silence before handoff. A finish-your-thought cue at 28 seconds and a 40-second floor
+  cap bound monologues. Short `session.commentary.append` cues actually trigger
+  speech; instruction changes alone do not guarantee a greeting. One silence cue is allowed, then the show stops; it never
+  retries failed paid sessions. Planned relay continuations require confirmed
+  closure of the previous pair; they are not error recovery.
 - Both hosts have separate context and receive the other host's audio. A typed
   follow-up is added to both at the next handoff. The next host is cued to answer.
 - Stop, nine-minute timeout, hidden tab, suspended audio, offline state, peer
@@ -114,7 +122,7 @@ storage privacy; a studio passphrase is not encryption of IndexedDB.
 Open **Try a short pilot → Run & record a 90-second pilot** in the protected
 Preview. This explicitly opts into recording, runs the same research and live
 audio paths as an ordinary show, and injects a hospital-staffing follow-up after
-35 seconds. Both sessions close after 90 seconds; Stop still works at any time.
+35 seconds. Both sessions close by 90 seconds, or at a natural closing pause in the final 15 seconds; Stop still works at any time.
 There are no retries or additional model calls for evaluation.
 
 The report preserves timestamped input/output transcript fragments, measured
@@ -173,5 +181,5 @@ Reference contracts checked against OpenAI Python SDK 3.55.0 and official docs:
 [GPT-Live WebRTC](https://developers.openai.com/api/docs/guides/realtime-webrtc),
 [session lifecycle](https://developers.openai.com/api/docs/guides/live-conversations),
 [GPT-Live pricing](https://developers.openai.com/api/docs/models/gpt-live-1).
-The runtime uses direct HTTPX calls; no AI Gateway, older integration, or SDK
+The runtime uses direct HTTPX and WebSocket calls; no AI Gateway, older integration, or SDK
 retry behavior is involved.

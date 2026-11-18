@@ -1,180 +1,130 @@
-# Ask the Hosts pilot — verification record
+# Private Preview verification — November 18, 2026
 
-Date: November 18, 2026. Branch: `codex/ask-the-hosts-pilot`.
+Scope: only `mattvildibill/radio`, branch `codex/ask-the-hosts-pilot`, and its
+existing Vercel radio project. No production deployment, new provider, account,
+storage service, paid Vercel feature, or shared-setting change.
 
-## Verified locally
-
-- `pytest -q`: **18 passed**. Vercel protection admission and origin checks; Production start
-  denial; missing configuration fails closed; signed research tickets cannot be
-  forged or moved to a new browser session; research must finish with sources
-  before tickets are issued; both hosts receive server-defined voices/context;
-  close capabilities are scoped; quota errors make one request and do not expose
-  provider diagnostics or keys; request size limits and security headers.
-- `npm test`: **6 passed**. Media-silence handoffs; one silence-recovery cue then
-  stop; monologue cap; inactive-host sound does not advance the active turn;
-  deterministic nine-minute handoff simulation; safe source URLs and replay labels.
-- `npm run check`: all three browser modules parse successfully.
-- Chromium local browser: the actual IndexedDB library stored a **24,596-byte**
-  mix of two explicitly labeled synthetic tones. The actual app replay UI showed
-  “Recording,” original date and time, `America/Denver`, age, duration, and source
-  link. After a full page reload it played to completion: media
-  `currentTime = duration = 2.939763`, `ended = true`, `error = null`.
-- Browser fixture injected a research quota failure. UI returned to idle, both
-  hosts showed “Off air,” and the explicit no-retry error appeared. No session
-  request or real provider request was made.
-- Actual app layout rendered without horizontal overflow at 1165px. No app-origin
-  browser error/warning appeared in the inspected logs; unrelated browser
-  extension metadata errors were present.
-
-The browser fixture is separate from the app and exists only on localhost. It
-bypasses authentication for the fixture UI and supplies a deliberate quota
-failure. It is never imported or mounted by the production/Preview entrypoint.
-The saved test tones are **not AI speech** and are not evidence of host chemistry.
-
-## Protected Preview deployment
-
-The existing radio Git integration deployed application commit
-`63827128c80ac3133df2799779f63b4ac19869d5` successfully. GitHub's Vercel status
-reported “Deployment has completed”; the Vercel bot reported **Ready**, the same
-radio project/team IDs, and this branch Preview:
-
-https://radio-git-codex-ask-the-hosts-pilot-mattvildibills-projects.vercel.app
-
-Deployment details:
-https://vercel.com/mattvildibills-projects/radio/6pPBZmpLdcZcYNYL4JfUTgh42q2k
+Preview: https://radio-git-codex-ask-the-hosts-pilot-mattvildibills-projects.vercel.app/
 
 Draft PR: https://github.com/mattvildibill/radio/pull/1
 
-An unauthenticated HTTPS request to the Preview returned **302 to Vercel SSO**,
-confirming the deployment is protected. It did not reach the application. No
-Production deployment was requested. Project identity here is evidenced by the
-Git integration, not a successful direct Vercel project API inspection.
+## Real 90-second acceptance run
 
-## External access blockers
+Application commit `89e8d06`; started at 20:04:30 UTC, November 18.
 
-- Vercel connector returns HTTP 404 for `radio` by name and by the project ID
-  recorded in the repository, under the known team ID and the user-confirmed
-  `mattvildibills-projects` slug. A name-scoped list returned no project.
-- Only radio was targeted. No other repo/project was inspected or changed.
-- With user-approved browser fallback, the exact radio dashboard redirected to
-  Vercel sign-in. Two secure sign-in requests (the second explicitly requested by the user)
-  returned `declined`. No credentials
-  were retrieved, exposed, or entered by the agent.
-- No usable Vercel CLI credential is available in this execution environment.
-- Automatic approval review rejected the protected-fetch connector because it
-  creates or reuses a temporary share link. No share link was created or reused
-  by that attempt. Authentication/protection was not weakened.
+- Sourced Responses research completed at **20:04:44.885 UTC**.
+- Eli and Mara sessions started at **20:04:46.352 / 46.499 UTC**, after research.
+- Both produced on-air PCM audio. The exported recording is 90 seconds.
+- Both produced input transcripts matching their co-host's actual routed audio.
+  For example Eli heard Mara question selection bias in the 2025 workweek study;
+  Mara heard Eli question who carries the cost when coverage cannot slip.
+- The typed hospital-staffing follow-up was queued at **20:05:21.503**, delivered
+  to both at **20:05:36.890**, and addressed by Mara: patient coverage cannot
+  stop on Friday, shift redesign matters, and long-term staffing-cost evidence
+  is thinner. Eli's final response began "I buy that. In 24/7 settings, coverage
+  isn't negotiable." The bounded pilot ended during that final contribution.
+- Both sessions emitted `session.closed` with `close_requested` and **89 seconds
+  each** of final voice usage; show cleanup completed at **20:06:17.296 UTC**.
+- MediaRecorder saved the mixed conversation in IndexedDB on the protected
+  Preview origin. After a full reload, it decoded and the actual replay audio
+  element reached **10.05 seconds**, playing, with no media error.
+- All eight transport, co-host input, follow-up delivery, closure, recording,
+  and post-reload playback checks passed. These checks do not certify subjective
+  chemistry or guarantee factual accuracy.
 
-## Not yet verified — required before acceptance
+Research usage: **13,204 input tokens** (4,623 cached), **1,162 output tokens**
+(215 reasoning), 14,366 total, one web-search call. Voice: **178 session-seconds**,
+approximately $0.148 at the documented $0.05/session-minute rate, plus research.
+This is an estimate, not an account invoice.
 
-- The new Preview `OPENAI_API_KEY` through the app; no real OpenAI call has run.
-- GPT-Live access, actual two-session startup, actual reciprocal input audio,
-  audible contextual responses, or voice audition/level tuning. Gleam/Vesper and
-  the initial gains are candidates pending a real audition.
-- Whether the chosen producer model accepts this bounded web-search/structured
-  output request with this project's API access.
-- Typed follow-up changing a real spoken discussion.
-- Real conversation recording and playback after reload on the private Preview.
-- Both real sessions reporting final usage after stop, timeout, or disconnect.
-- Full nine-minute real operation, physical mobile/Safari playback, interrupted
-  WebRTC recovery, or browser-crash billing behavior.
-- Application access and deployed environment configuration behind Preview
-  protection. No production rollout is authorized.
+## Audio measurements and tuning
 
-**OpenAI usage incurred by this work so far: zero requests, $0.** Local tests use
-fixtures, not the newly added key. The $15 project budget was not changed.
+FFmpeg measured the real mixed recording at **-18.52 LUFS integrated**, **-1.01
+ dBTP**, and **6.3 LU** loudness range. The opening Mara segment was -17.13 LUFS;
+Eli's first segment was -21.21 LUFS. Handoff silences measured 1.66, 2.08, and
+1.78 seconds. Neither audio measurement nor transcript inspection is represented
+as a human listening panel.
 
-## Next executable acceptance sequence
+Commit `a420d96` balances the routed voices with gains 0.9 / 1.4 before the mix
+compressor, reduces the pause threshold from 1.25 to 1.0 seconds, uses the verified
+relay for the default flow, and collapses source lists to keep the studio simple.
+The full-length acceptance run below exercised that commit.
 
-1. Restore access to the existing radio Vercel project (connector or browser).
-2. Confirm project identity, existing free plan, Git link, and Preview protection.
-3. Use only the existing Preview `OPENAI_API_KEY`; leave all existing keys and
-   integrations alone. No separate pilot passphrase is required.
-4. Open the stable branch Preview in a Vercel-authenticated browser. The app
-   verifies the outer protection gate before admitting a browser session.
-5. Run a short sourced question (about 60–90 seconds), audition both voices and
-   adjust levels/handoff timing based on actual audio. Inject a typed follow-up.
-6. Explicitly record, stop, confirm both final session usage events, reload the
-   same preview origin and play the saved conversation. Retain usage/notes and
-   report only observed results. Stop on any spend/quota error; do not retry it.
+## Full-length real show
 
-## Access simplification after connection troubleshooting
+Commit `a420d96`: research completed **20:09:12.820 UTC**; both hosts started
+about 1.4 seconds later. The show ended naturally at **8:56**, cleanup complete
+at **20:18:10.545 UTC**. The final spoken sentence completed normally.
 
-Removed the extra app passphrase setup. The app now relies on the existing Vercel
-Authentication gate, verifies that an unauthenticated probe to the exact fixed
-radio branch hostname is redirected to Vercel SSO, and fails closed for public,
-unknown, failed, non-Preview or different-host responses. A Secure/HttpOnly cookie
-identifies the authenticated browser for signed brief capabilities. Six new
-negative protection cases plus inert-probe and host-restriction checks pass.
-The combined suite is now **18 Python + 6 JavaScript tests**.
+- Three sequential paired relay segments worked within Vercel's 300-second
+  invocation limit. All six sessions emitted `session.closed` before cleanup.
+  Both preceding sessions finalized before each continuation opened.
+- The two continuations retained the aired conversation and listener follow-ups;
+  the hosts resumed without new introductions.
+- Two follow-ups were typed and submitted through the normal UI. The first
+  changed the discussion to hospital coverage and cost. The second asked the
+  hosts to take opposing positions. Eli advocated a limited funded trial; Mara
+  initially preferred waiting, then changed to conditional support after Eli's
+  argument. Both stated what evidence would change their positions.
+- Incoming co-host transcripts contained 487 Mara and 602 Eli fragments,
+  corroborating actual PCM delivery in both directions.
+- Final accumulated voice usage: **527 seconds per host / 1,054 total**,
+  approximately **$0.878** for voices. Research: **13,110 input tokens** (4,623
+  cached), **1,126 output** (147 reasoning), 14,236 total, one search call.
+- An explicitly started full-show recording saved with an **8:55** duration,
+  original date/local time, MST / America/Denver zone, age and original sources.
+  After reload, the actual saved audio played to **49.96 seconds** with no error.
+- One earlier long turn reached the 40-second floor cap. The final implementation
+  adds a finish-your-thought instruction at 28 seconds and prompts shorter,
+  more varied contributions to reduce abrupt handoffs and repetitive agreement.
 
-The connector continues to return 404 after reinstall and explicit team consent.
-A fresh tool-controlled Cloud Chrome tab still redirects to login; the user's
-regular Codex Browser panel has a separate signed-in session. This is an agent
-access limitation. No additional login or passphrase is needed for the user to
-try the stable Preview from their existing signed-in browser. Real provider
-acceptance is still pending; no API success is inferred from these local checks.
+Final refinements also stop startup promptly on a provider error or browser
+Stop, retain unknown usage as unknown, and prioritize source URLs actually cited
+in the brief. Quota and stop-before-ready regression tests pass.
 
-## Short pilot verification runner
+## Fixes established by actual testing
 
-Added an explicit **Run & record a 90-second pilot** action behind existing
-Preview protection. It uses the normal research, two-host WebRTC, audio routing,
-typed-follow-up and recording paths. It starts recording before the first floor
-cue, injects the follow-up at 35 seconds, and closes both sessions at 90 seconds.
-Follow-ups take precedence over the wrap-up cue. It neither retries failures nor
-launches a second show. Ordinary shows still run for nine minutes.
+- The producer now has a 6,000-token allowance shared by reasoning and the brief,
+  plus bounded searches and specific errors. Real research has completed.
+- The WebRTC SDP offer's final CRLF must be preserved. Trimming it caused the
+  OpenAI 400 response. After correction, the API accepted both sessions.
+- The agent's Cloud Chrome produces no ICE candidates even with STUN, preventing
+  direct WebRTC. The app now uses a same-project, server-side WebSocket audio
+  relay by default. No extra service or key is required.
+- Vercel installs from `pyproject.toml` / `uv.lock`, not just requirements.txt.
+  Missing WebSocket dependencies caused a deployed 500 while local tests passed.
+  Both manifests and the lockfile now agree; a locked sync imports the actual
+  deployed modules. A regression check covers manifest consistency.
+- `session.instructions.append` alone did not trigger speech. Explicit
+  `session.commentary.append` at the opening and handoffs produced real speech.
+- A no-cost authenticated relay preflight runs before paid research. Failed
+  networking now stops without an OpenAI call.
 
-The downloadable local report preserves timestamped transcript fragments,
-on-air measurements, research usage and sources, final session usage, and the
-recording ID. Signed tickets, owner capabilities, and API keys are excluded.
-An app reload decodes the saved recording and the actual audio element records
-post-reload playback progress. Semantic relevance, voice quality and chemistry
-remain explicitly subject to listening, not automated success assertions.
+## Bounded failed attempts and usage limits
 
-Verification of this update:
+Before the successful pilot, the agent ran five research requests (one search
+per observed result), one pair of accepted WebRTC sessions that disconnected,
+and one silent relay pair. The silent pair closed with **19 + 20 = 39 seconds**
+final usage. The WebRTC pair was explicitly hung up via the server; its final
+billable seconds were not returned. One of the five research token snapshots
+was not retained, so no exact total-dollar claim is made. No spend-limit error
+was retried and no project budget/settings were changed.
 
-- **18 Python tests and 9 JavaScript tests passed**, plus browser-module syntax
-  and diff checks. Report checks reject absent evidence and incomplete closure.
-- Clicked the actual pilot button against the local quota fixture: it returned
-  to idle, retained the error, made no session requests, and marked every real
-  acceptance check “Not verified.” No real provider call was attempted.
-- Created another explicitly labeled local two-tone recording (24,596 bytes),
-  fully reloaded the app, and played it to completion. Browser media reported
-  `currentTime = duration = 2.939988`, `ended = true`, `error = null`.
-  The report marked only saving, post-reload decoding, and playback verified;
-  all research/host/follow-up/usage checks remained unverified.
+Known research totals for those preliminary requests: 14,179; 14,144; 14,346;
+14,315 tokens, plus one unretained snapshot. Separate user-initiated attempts
+before this work may have incurred usage outside this evidence.
 
-The tool-controlled browser still has no authenticated Vercel session, and the
-connector still returns project-not-found for the exact radio project/team IDs.
-The user can run this bounded test in their already-authenticated Codex browser
-without changing permissions or adding a password. No real OpenAI spend has
-been incurred by the agent as of this update. This runner is an executable
-acceptance path, not a claim that real voice acceptance has already passed.
+## Local checks and remaining boundaries
 
-## Research failure follow-up
-
-The owner reported that a typed question reached the researching state and then
-failed. The exact error is pending; no claim is made about its root cause. The
-radio-scoped runtime-log query returned HTTP 403, so its failure logs were not
-available to the agent. No additional real API attempt was made.
-
-Corrected two weaknesses in the request contract: the original 2,600-token cap
-included reasoning as well as the answer; it is now 6,000 with an explicit
-600-word brief and the same three-search limit. The structured schema now
-requires nonempty strings, matching the app's admission rules.
-
-Failure handling distinguishes output exhaustion, refusal, missing search,
-missing sources, absent text, malformed JSON and incomplete brief fields. It
-retains allowlisted token/search usage without returning raw provider output.
-Known API errors distinguish invalid credentials, model access, credit/quota and
-rate limits. No failure automatically retries or starts host sessions. Optional
-null source/annotation lists and a null JSON brief now fail cleanly instead of
-raising an unhandled exception.
-
-27 Python tests pass, including nine new failure regression cases. Browser
-syntax checks pass. The local UI fixture for an exhausted output allowance
-displayed the specific error, returned both hosts to Off air, and retained the
-fixture's token usage and diagnostic code in Show notes & usage. This was not a
-real API call and does not establish which failure the owner encountered.
-The owner's failed attempt may have incurred research usage; its amount is
-unknown. Live audio acceptance is still pending.
+- 37 Python tests and 9 JavaScript tests pass; browser modules pass syntax checks.
+- Tests cover private admission, origin/owner/expiry restrictions, research
+  failures and secret redaction, correct PCM routing, and paired finalization.
+- Replay storage is private to this browser profile/device/origin. It is not
+  cross-device storage, and clearing browser data removes it. Export to retain.
+- No microphone permission is requested. Hidden tab, offline, Stop, and timeout
+  stop the show. Browser crashes rely on transport disconnect handling.
+- The private-owner pilot has no distributed concurrency or billing ledger.
+  The external $15 OpenAI project budget is unchanged; it is not claimed to be
+  a server-enforced app-level hard cap.
+- Physical Safari/mobile and direct WebRTC audio in another browser are not
+  verified. The default relay is the verified path.

@@ -89,3 +89,41 @@ def test_deployment_manifest_contains_runtime_dependencies():
     lock = tomllib.loads(Path('uv.lock').read_text())
     names = {package['name'] for package in lock['package']}
     assert {'websockets', 'uvicorn', 'fastapi'} <= names
+
+
+def test_quota_error_stops_without_retry_or_waiting_for_speech(monkeypatch):
+    class Rejected(Upstream):
+        async def send(self, raw):
+            self.sent.append(json.loads(raw))
+            if self.sent[-1]['type'] == 'session.start':
+                await self.events.put(json.dumps({'type': 'error', 'error': {'code': 'insufficient_quota'}}))
+    upstreams = []
+    def connect(*args, **kwargs):
+        socket = Rejected(); upstreams.append(socket); return socket
+    monkeypatch.setattr(relay, 'connect', connect)
+    browser = Browser()
+    async def scenario():
+        await asyncio.wait_for(relay.run_relay(browser, [{'audio': {}}, {'audio': {}}], 'test-key', 90), 1)
+    asyncio.run(scenario())
+    assert len(upstreams) <= 2
+    assert all(sum(e['type'] == 'session.start' for e in s.sent) == 1 for s in upstreams)
+    assert any(e['type'] == 'relay-error' and 'insufficient_quota' in e['message'] for e in browser.events)
+    assert not any(e['type'] == 'audio' for e in browser.events)
+
+
+def test_stop_before_ready_closes_both_sessions(monkeypatch):
+    upstreams = [Upstream(), Upstream()]
+    connections = iter(upstreams)
+    monkeypatch.setattr(relay, 'connect', lambda *args, **kwargs: next(connections))
+    class StopBrowser(Browser):
+        async def send_json(self, event):
+            self.events.append(event)
+            if event['type'] == 'ready':
+                await self.incoming.put(json.dumps({'type': 'stop'}))
+    browser = StopBrowser()
+    async def scenario():
+        await asyncio.wait_for(relay.run_relay(browser, [{'audio': {}}, {'audio': {}}], 'test-key', 90), 1)
+    asyncio.run(scenario())
+    assert browser.events[-1]['finalized']
+    assert not any(e['type'] == 'audio' for e in browser.events)
+    assert all(any(e['type'] == 'session.close' for e in s.sent) for s in upstreams)

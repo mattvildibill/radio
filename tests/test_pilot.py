@@ -207,3 +207,13 @@ async def test_negotiation_diagnostics_redact_server_credential(client, monkeypa
     with pytest.raises(web.HTTPException) as error: await web.openai('/live/sessions', {})
     assert 'session.input' in error.value.detail
     assert 'test-key' not in error.value.detail and 'sk-hidden' not in error.value.detail
+
+
+def test_cited_sources_precede_search_discoveries(client, monkeypatch):
+    unlock(client)
+    result = researched()
+    result['output'][1]['content'][0]['text'] = json.dumps(dict(BRIEF, facts='The reporting at https://example.org/report supports this; https://invented.example is not a search source.'))
+    monkeypatch.setattr(web, 'openai', AsyncMock(return_value=result))
+    response = client.post('/api/research', json={'question': 'a real topic'}, headers=ORIGIN)
+    urls = [s['url'] for s in response.json()['sources']]
+    assert urls == ['https://example.org/report', 'https://example.org/primary']
