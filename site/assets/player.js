@@ -1,3 +1,4 @@
+import {AudioTimeline} from './audio-timeline.js';
 import {FloorController, duration, ago, safeSource} from './controller.js';
 import * as library from './library.js';
 import {PILOT_QUESTION, PILOT_FOLLOWUP, REPORT_KEY, assessPilot} from './verification.js';
@@ -140,8 +141,9 @@ function playRelayAudio(r, encoded) {
   const samples = buffer.getChannelData(0);
   for (let i = 0; i < samples.length; i++) samples[i] = view.getInt16(i * 2, true) / 32768;
   const source = r.context.createBufferSource(); source.buffer = buffer; source.connect(r.mix);
-  const at = Math.max(r.context.currentTime + 0.08, r.playAt || 0);
-  source.start(at); r.playAt = at + buffer.duration;
+  r.audioTimeline ||= new AudioTimeline();
+  const at = r.audioTimeline.schedule(r.context.currentTime, buffer.duration);
+  source.start(at);
   source.onended = () => source.disconnect();
 }
 
@@ -453,7 +455,7 @@ async function stopShow(message = 'The show has ended.') {
   }));
   r.inputs.forEach(input => input.stream.getTracks().forEach(t => t.stop()));
   r.capture.stream.getTracks().forEach(t => t.stop()); await r.context.close(); await saved;
-  log('show-ended'); renderUsage();
+  log('show-ended', {audioUnderruns: r.audioTimeline?.underruns || 0}); renderUsage();
   const incomplete = (r.relay && !r.relayFinalized) || r.hosts.some(h => h.ready && !h.finalized);
   setStatus(message + (incomplete ? ' Final provider usage is unconfirmed.' : ''));
   names.forEach((_, i) => { $('host-' + i).classList.remove('speaking'); $('host-' + i).querySelector('.host-state').textContent = 'Off air'; });

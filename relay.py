@@ -139,7 +139,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
         await emit({'type': 'floor', 'host': index})
         await send(index, 'session.instructions.append', cue)
         await send(index, 'session.commentary.append',
-            'Introduce Mara and Eli as AI hosts, then open our question with one concrete fact from the brief.' if opening else cue)
+            'Briefly introduce Mara and Eli as AI hosts. Open with the named, dated real-world story in the producer opening, who was affected, and why it matters to the listener.' if opening else cue)
 
     async with AsyncExitStack() as stack:
         try:
@@ -174,7 +174,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 if elapsed >= duration:
                     stop.set()
                     break
-                chunk = bytes(buffers[active][:FRAME_BYTES])
+                chunk = bytes(buffers[active][:FRAME_BYTES]) if len(buffers[active]) >= FRAME_BYTES else b''
                 del buffers[active][:len(chunk)]
                 frame = chunk.ljust(FRAME_BYTES, b'\x00')
                 values = array('h', frame)
