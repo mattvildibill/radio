@@ -164,7 +164,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
             await emit({'type': 'ready'})
             if not await wait_or_stop(go.wait(), 10):
                 return
-            started = since = last_sound = time.monotonic()
+            started = since = last_sound = next_frame = time.monotonic()
             heard = recovered = nudged = False
             turn, last_meter = 1, -1
             await floor(active, opening=first)
@@ -215,7 +215,9 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 elif not heard and tick - since > 10 and not recovered:
                     recovered = True
                     await send(active, 'session.commentary.append', 'ON AIR. The room is quiet. Give one concise response grounded in the brief, then pause.')
-                await asyncio.sleep(max(0, 0.04 - (time.monotonic() - tick)))
+                # Absolute deadlines avoid accumulating scheduler delay on every frame.
+                next_frame = max(next_frame + 0.04, time.monotonic() - 0.12)
+                await asyncio.sleep(max(0, next_frame - time.monotonic()))
         except Exception:
             failure = failure or 'The audio relay could not complete the connection. No retry was made.'
         finally:
