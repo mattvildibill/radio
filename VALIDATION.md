@@ -114,3 +114,39 @@ regular Codex Browser panel has a separate signed-in session. This is an agent
 access limitation. No additional login or passphrase is needed for the user to
 try the stable Preview from their existing signed-in browser. Real provider
 acceptance is still pending; no API success is inferred from these local checks.
+
+## Short pilot verification runner
+
+Added an explicit **Run & record a 90-second pilot** action behind existing
+Preview protection. It uses the normal research, two-host WebRTC, audio routing,
+typed-follow-up and recording paths. It starts recording before the first floor
+cue, injects the follow-up at 35 seconds, and closes both sessions at 90 seconds.
+Follow-ups take precedence over the wrap-up cue. It neither retries failures nor
+launches a second show. Ordinary shows still run for nine minutes.
+
+The downloadable local report preserves timestamped transcript fragments,
+on-air measurements, research usage and sources, final session usage, and the
+recording ID. Signed tickets, owner capabilities, and API keys are excluded.
+An app reload decodes the saved recording and the actual audio element records
+post-reload playback progress. Semantic relevance, voice quality and chemistry
+remain explicitly subject to listening, not automated success assertions.
+
+Verification of this update:
+
+- **18 Python tests and 9 JavaScript tests passed**, plus browser-module syntax
+  and diff checks. Report checks reject absent evidence and incomplete closure.
+- Clicked the actual pilot button against the local quota fixture: it returned
+  to idle, retained the error, made no session requests, and marked every real
+  acceptance check “Not verified.” No real provider call was attempted.
+- Created another explicitly labeled local two-tone recording (24,596 bytes),
+  fully reloaded the app, and played it to completion. Browser media reported
+  `currentTime = duration = 2.939988`, `ended = true`, `error = null`.
+  The report marked only saving, post-reload decoding, and playback verified;
+  all research/host/follow-up/usage checks remained unverified.
+
+The tool-controlled browser still has no authenticated Vercel session, and the
+connector still returns project-not-found for the exact radio project/team IDs.
+The user can run this bounded test in their already-authenticated Codex browser
+without changing permissions or adding a password. No real OpenAI spend has
+been incurred by the agent as of this update. This runner is an executable
+acceptance path, not a claim that real voice acceptance has already passed.

@@ -1,11 +1,36 @@
 import {FloorController, duration, ago, safeSource} from './controller.js';
 import * as library from './library.js';
+import {PILOT_QUESTION, PILOT_FOLLOWUP, REPORT_KEY, assessPilot} from './verification.js';
 const $ = id => document.getElementById(id);
 const names = ['Mara', 'Eli'];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 let show = null, run = null, recording = null, pendingFollowup = '', urls = [];
 let notes = {events: [], transcripts: [], usage: [null, null]};
 let lastTranscript = null;
+let pilotReport = null, loadedPilot = false;
+try { pilotReport = JSON.parse(localStorage.getItem(REPORT_KEY)); loadedPilot = Boolean(pilotReport); } catch { /* Storage is checked when saving. */ }
+
+function safeNotes() {
+  const safeShow = show ? Object.fromEntries(Object.entries(show).filter(([k]) => !['ticket', 'owner'].includes(k))) : null;
+  return {show: safeShow, ...notes};
+}
+function renderPilot() {
+  if (!pilotReport) return;
+  $('pilot-results').replaceChildren();
+  for (const check of assessPilot(pilotReport)) {
+    const li = document.createElement('li');
+    li.textContent = `${check.passed ? 'Verified' : 'Not verified'}: ${check.label}`;
+    $('pilot-results').append(li);
+  }
+  $('pilot-status').textContent = pilotReport.error || 'Pilot evidence saved. Listen to judge the voices, handoffs, and whether the hospital follow-up changed the conversation. These judgments are not automatically marked as passed.';
+  $('pilot-reload').hidden = !pilotReport.recordingId || loadedPilot;
+  $('pilot-download').hidden = false;
+}
+function savePilotReport() {
+  try { localStorage.setItem(REPORT_KEY, JSON.stringify(pilotReport)); }
+  catch { fail('Pilot report could not be stored. Download it before reloading.'); }
+  renderPilot();
+}
 
 async function api(path, payload, options = {}) {
   const response = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload), ...options});
@@ -53,8 +78,9 @@ function renderUsage() {
 function transcript(index, e) {
   // Input transcripts are evidence of what each host actually heard. Output
   // fragments are captions, not an invented completed-turn transcript.
-  notes.transcripts.push({host: names[index], type: e.type, delta: e.delta, start_ms: e.start_ms, end_ms: e.end_ms});
-  if (e.type !== 'session.output_transcript.delta') return;
+  const onAir = run?.controller?.active === index && !run?.stopping;
+  notes.transcripts.push({at: new Date().toISOString(), host: names[index], onAir, type: e.type, delta: e.delta, start_ms: e.start_ms, end_ms: e.end_ms});
+  if (e.type !== 'session.output_transcript.delta' || !onAir) return;
   if (!lastTranscript || lastTranscript.index !== index) {
     const p = document.createElement('p'), strong = document.createElement('strong'), span = document.createElement('span');
     strong.textContent = names[index] + ': '; p.append(strong, span); $('transcript').append(p);
@@ -155,7 +181,7 @@ function floor(r, index, turn) {
   const remaining = r.limit - (Date.now() - r.started) / 1000;
   const cue = turn === 1
     ? 'ON AIR. Open with a brief disclosure that Mara and Eli are AI hosts, then frame the listener question through one concrete fact from the brief. Give Eli something specific to question. Speak for about 20 seconds.'
-    : remaining < 45
+    : remaining < 45 && !followup
       ? 'ON AIR. Wrap up naturally: one useful takeaway and one unresolved question. Do not introduce a new topic.'
       : 'ON AIR. You have the floor. Respond to one specific thing you just heard your co-host say, then advance the discussion through your angle. About 15–35 seconds; shorter is welcome. ' + (followup ? 'Address the listener follow-up just added to your context, acknowledging uncertainty where the brief cannot answer it.' : 'You can disagree, ask a genuine question, or follow a worthwhile tangent.');
   send(r.hosts[index], 'session.instructions.append', cue);
@@ -166,7 +192,7 @@ function floor(r, index, turn) {
     $('host-' + i).querySelector('.host-state').textContent = i === index ? 'On air' : 'Listening';
   });
 }
-async function startShow(event) {
+async function startShow(event, pilot = false) {
   event.preventDefault(); if (run) return;
   document.querySelectorAll('.replay audio').forEach(audio => audio.pause());
   $('error').textContent = ''; $('recording-status').textContent = ''; pendingFollowup = '';
@@ -175,9 +201,10 @@ async function startShow(event) {
   }
   const context = new AudioContext(); await context.resume();
   const r = {context, hosts: [], inputs: [context.createMediaStreamDestination(), context.createMediaStreamDestination()],
-    stopping: false, limit: 540, abort: new AbortController(), started: null};
+    stopping: false, limit: pilot ? 90 : 540, pilot, abort: new AbortController(), started: null};
   run = r; show = null; notes = {events: [], transcripts: [], usage: [null, null]}; lastTranscript = null;
-  $('transcript').replaceChildren(); $('start').disabled = true; $('stop').disabled = false; $('question').disabled = true;
+  $('transcript').replaceChildren(); $('start').disabled = true; $('run-pilot').disabled = true; $('stop').disabled = false; $('question').disabled = true;
+  $('clock').textContent = '00:00 / ' + duration(r.limit);
   $('research').hidden = true; setStatus('The producer is researching…'); log('research-started');
   r.mix = context.createDynamicsCompressor(); r.mix.threshold.value = -15; r.mix.ratio.value = 4;
   r.master = context.createGain(); r.master.gain.value = Number($('volume').value);
@@ -201,11 +228,24 @@ async function startShow(event) {
         log('silence-recovery', {host: names[i]});
         send(r.hosts[i], 'session.instructions.append', 'ON AIR. The room is quiet. Give a brief response to the last idea you heard, grounded in the brief.');
       }});
-    r.controller.start(); setStatus('Live from the studio'); $('signal').classList.add('live');
+    // The pilot button explicitly opts into recording. Start capture before the
+    // opening cue so the audition includes the very first spoken words.
+    if (pilot) {
+      await changeRecording();
+      if (!recording) throw new Error('Pilot recording could not start. Both sessions are closing.');
+      r.recordingId = recording.record.id;
+      r.followupTimer = setTimeout(() => {
+        if (r.stopping) return;
+        pendingFollowup = PILOT_FOLLOWUP;
+        $('followup-status').textContent = 'Pilot follow-up queued: ' + PILOT_FOLLOWUP;
+        log('followup-queued', {text: PILOT_FOLLOWUP});
+      }, 35000);
+    }
+    r.controller.start(); setStatus(pilot ? '90-second pilot · recording' : 'Live from the studio'); $('signal').classList.add('live');
     $('record').disabled = !window.MediaRecorder; $('followup').disabled = false; $('send').disabled = false;
     r.interval = setInterval(() => {
       const elapsed = (Date.now() - r.started) / 1000;
-      $('clock').textContent = duration(elapsed) + ' / 09:00';
+      $('clock').textContent = duration(elapsed) + ' / ' + duration(r.limit);
       if (elapsed >= r.limit) { void stopShow('The show has finished.'); return; }
       const levels = r.hosts.map(h => {
         h.analyser.getFloatTimeDomainData(h.samples);
@@ -219,7 +259,7 @@ async function startShow(event) {
     }, 100);
     r.timeout = setTimeout(() => void stopShow('The show has finished.'), r.limit * 1000);
   } catch (error) {
-    if (!r.stopping) { fail(error); await stopShow('The show could not start.'); }
+    if (!r.stopping) { r.error = error.message; fail(error); await stopShow('The show could not start.'); }
   }
 }
 async function emergencyClose(host) {
@@ -230,7 +270,7 @@ async function emergencyClose(host) {
 }
 async function stopShow(message = 'The show has ended.') {
   const r = run; if (!r || r.stopping) return;
-  r.stopping = true; r.abort.abort(); r.controller?.stop(); clearInterval(r.interval); clearTimeout(r.timeout);
+  r.stopping = true; r.abort.abort(); r.controller?.stop(); clearInterval(r.interval); clearTimeout(r.timeout); clearTimeout(r.followupTimer);
   $('stop').disabled = true; $('record').disabled = true; $('send').disabled = true; $('followup').disabled = true;
   setStatus('Closing both host sessions…'); $('signal').classList.remove('live');
   const saved = stopRecording();
@@ -254,7 +294,14 @@ async function stopShow(message = 'The show has ended.') {
   const incomplete = r.hosts.some(h => h.ready && !h.finalized);
   setStatus(message + (incomplete ? ' Final provider usage is unconfirmed.' : ''));
   names.forEach((_, i) => { $('host-' + i).classList.remove('speaking'); $('host-' + i).querySelector('.host-state').textContent = 'Off air'; });
-  run = null; $('start').disabled = false; $('question').disabled = false;
+  if (r.pilot) {
+    let savedRecording;
+    try { savedRecording = (await library.list()).find(item => item.id === r.recordingId && item.complete); } catch { /* Report the missing evidence. */ }
+    pilotReport = {...safeNotes(), createdAt: new Date().toISOString(), recordingId: savedRecording?.id || null,
+      error: r.error || (message === 'The show has finished.' ? null : message), replay: {}};
+    loadedPilot = false; savePilotReport(); $('pilot-check').open = true;
+  }
+  run = null; $('start').disabled = false; $('run-pilot').disabled = false; $('question').disabled = false;
 }
 function blobLink(blob, filename, title) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); urls.push(a.href);
@@ -326,6 +373,11 @@ async function renderLibrary() {
       const audio = document.createElement('audio'); audio.controls = true; audio.preload = 'metadata';
       audio.src = URL.createObjectURL(record.audio); urls.push(audio.src);
       audio.onplay = () => { if (run) audio.pause(); else document.querySelectorAll('.replay audio').forEach(other => { if (other !== audio) other.pause(); }); };
+      audio.ontimeupdate = () => {
+        if (loadedPilot && record.id === pilotReport?.recordingId && audio.currentTime > 1 && !pilotReport.replay?.playedAfterReload) {
+          pilotReport.replay = {...pilotReport.replay, playedAfterReload: true}; savePilotReport();
+        }
+      };
       const links = document.createElement('ul'); links.className = 'sources'; sourceList(links, record.sources);
       const researched = document.createElement('p'); researched.className = 'small'; researched.textContent = 'Original research: ' + new Date(record.researchedAt).toLocaleString();
       const actions = document.createElement('div'); actions.className = 'actions';
@@ -339,11 +391,36 @@ async function renderLibrary() {
 async function init() {
   const status = await (await fetch('/api/status')).json();
   $('access').hidden = status.unlocked; $('studio').hidden = !status.unlocked;
-  if (!status.unlocked) $('access-status').textContent = status.message || 'Open the protected radio Preview to use this studio.';;
-  if (status.unlocked) await renderLibrary();
+  if (!status.unlocked) $('access-status').textContent = status.message || 'Open the protected radio Preview to use this studio.';
+  if (status.unlocked) {
+    await renderLibrary(); renderPilot();
+    if (loadedPilot && pilotReport?.recordingId) {
+      $('pilot-check').open = true;
+      let decoder;
+      try {
+        const saved = (await library.list()).find(item => item.id === pilotReport.recordingId);
+        if (!saved?.audio.size) throw new Error('The pilot recording is missing from this browser.');
+        decoder = new AudioContext();
+        const decoded = await decoder.decodeAudioData(await saved.audio.arrayBuffer());
+        pilotReport.replay = {...pilotReport.replay, decodedAfterReload: decoded.duration > 0, duration: decoded.duration};
+        savePilotReport();
+      } catch (error) { fail(error); }
+      finally { if (decoder) await decoder.close(); }
+    }
+  }
 }
 $('retry-access').onclick = () => init().catch(fail);
 $('question-form').onsubmit = startShow;
+$('run-pilot').onclick = event => {
+  if (run) return;
+  $('question').value = PILOT_QUESTION;
+  $('pilot-status').textContent = 'Running one pilot. No automatic retries. Recording starts when the hosts are ready.';
+  void startShow(event, true);
+};
+$('pilot-reload').onclick = () => { if (!run) location.reload(); };
+$('pilot-download').onclick = () => {
+  if (pilotReport) blobLink(new Blob([JSON.stringify({...pilotReport, checks: assessPilot(pilotReport)}, null, 2)], {type: 'application/json'}), 'radio-pilot-report.json', 'Download').click();
+};
 $('stop').onclick = () => void stopShow();
 $('record').onclick = () => void toggleRecording();
 $('volume').oninput = () => { if (run) run.master.gain.value = Number($('volume').value); };
@@ -353,15 +430,14 @@ $('followup-form').onsubmit = e => {
   $('followup').value = ''; $('followup-status').textContent = 'Queued for the next natural handoff.'; log('followup-queued', {text: pendingFollowup});
 };
 $('download-notes').onclick = () => {
-  const safeShow = show ? Object.fromEntries(Object.entries(show).filter(([k]) => !['ticket', 'owner'].includes(k))) : null;
-  const a = blobLink(new Blob([JSON.stringify({show: safeShow, ...notes}, null, 2)], {type: 'application/json'}), 'radio-show-notes.json', 'Download');
+  const a = blobLink(new Blob([JSON.stringify(safeNotes(), null, 2)], {type: 'application/json'}), 'radio-show-notes.json', 'Download');
   a.click();
 };
 window.addEventListener('offline', () => void stopShow('Network disconnected. Both sessions are closing.'));
 document.addEventListener('visibilitychange', () => { if (document.hidden && run) void stopShow('The tab became hidden. The show was stopped to limit spend.'); });
 window.addEventListener('pagehide', () => {
   const r = run; if (!r) return;
-  r.stopping = true; r.controller?.stop(); clearInterval(r.interval); clearTimeout(r.timeout);
+  r.stopping = true; r.controller?.stop(); clearInterval(r.interval); clearTimeout(r.timeout); clearTimeout(r.followupTimer);
   if (recording?.recorder.state === 'recording') recording.recorder.stop();
   for (const host of r.hosts) {
     send(host, 'session.close');

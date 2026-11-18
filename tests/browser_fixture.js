@@ -1,4 +1,5 @@
 import {save} from '/assets/library.js';
+import {REPORT_KEY} from '/assets/verification.js';
 document.getElementById('test').onclick = async () => {
   const result = document.getElementById('result');
   try {
@@ -20,6 +21,8 @@ document.getElementById('test').onclick = async () => {
       createdAt: new Date().toISOString(), timezone: 'America/Denver', duration: 3, complete: true,
       researchedAt: new Date().toISOString(), sources: [{title: 'Web Audio documentation (test reference)', url: 'https://developer.mozilla.org/en-US/docs/Web/API/Web_Audio_API'}],
       mimeType: recorder.mimeType, audio});
+    localStorage.setItem(REPORT_KEY, JSON.stringify({recordingId: 'local-browser-verification', events: [], transcripts: [], usage: [null, null],
+      error: 'LOCAL TONE FIXTURE ONLY. No host speech, research, or provider calls. Only recording persistence is being checked.', replay: {}}));
     result.textContent = 'Saved ' + audio.size + ' bytes to the actual private library. Open it, reload, and play the recording.';
   } catch(e) { result.textContent = 'FAILED: ' + e.message; }
 };

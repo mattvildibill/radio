@@ -108,6 +108,23 @@ cross-device sync. Use the same stable branch-preview origin across deployments,
 and export important recordings. Browser profiles/OS accounts provide local
 storage privacy; a studio passphrase is not encryption of IndexedDB.
 
+### Short pilot check
+
+Open **Try a short pilot → Run & record a 90-second pilot** in the protected
+Preview. This explicitly opts into recording, runs the same research and live
+audio paths as an ordinary show, and injects a hospital-staffing follow-up after
+35 seconds. Both sessions close after 90 seconds; Stop still works at any time.
+There are no retries or additional model calls for evaluation.
+
+The report preserves timestamped input/output transcript fragments, measured
+on-air audio levels, research sources/usage, closure events and final session
+usage in this browser. It excludes API keys and signed app capabilities. Click
+**Reload to check saved playback**, then play the saved Recording. The report
+separately records successful post-reload audio decoding and playback. Download
+the report and export audio for review. Transport checks do not automatically
+certify natural conversation, voice quality, factual accuracy, or whether a
+spoken follow-up answer is relevant; those require listening.
+
 ## Development and checks
 
 ```sh
