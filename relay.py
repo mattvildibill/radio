@@ -67,6 +67,9 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 elif kind in ('session.input_transcript.delta', 'session.output_transcript.delta', 'session.usage.updated'):
                     safe = {k: event[k] for k in ('type', 'delta', 'start_ms', 'end_ms', 'usage') if k in event}
                     await emit({'type': 'host-event', 'host': index, 'on_air': index == active, 'event': safe})
+                elif kind and ('appended' in kind or kind.endswith('.done')):
+                    await emit({'type': 'host-event', 'host': index, 'event': {
+                        k: event[k] for k in ('type', 'start_ms', 'end_ms', 'client_event_id') if k in event}})
                 elif kind == 'error':
                     code = str((event.get('error') or {}).get('code') or 'unknown')
                     failure = 'OpenAI rejected a live command (' + (code if code.replace('_', '').isalnum() else 'unknown') + '). No retry was made.'
@@ -101,19 +104,22 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
         active = index
         buffers[0].clear()
         buffers[1].clear()
-        await send(1 - index, 'session.instructions.append', 'LISTEN. Your co-host has the floor. Stay silent, hear their actual words, and wait for your next ON AIR cue.')
+        await send(1 - index, 'session.instructions.append', 'LISTEN. Stay silent until your next ON AIR cue.')
         followup = pending
         if followup:
             for i in range(2):
                 await send(i, 'session.thinking.append', json.dumps({'listener_followup': followup}))
             await emit({'type': 'followup-delivered', 'text': followup, 'host': index})
             pending = ''
-        cue = ('ON AIR. Briefly disclose that Mara and Eli are AI hosts, then open the listener question with one concrete fact. Give your co-host something specific to question. About 20 seconds.' if opening else
-               'ON AIR. Respond to the specific idea your co-host just said, then add your angle. Speak for 15–30 seconds, then leave a natural pause. ' +
-               ('Address the listener follow-up just added to context.' if followup else
-                'Wrap up with a useful takeaway and an open question.' if wrap else 'Disagree or concede when warranted. Advance the discussion rather than repeating it.'))
+        cue = 'ON AIR. Speak now for about 20 seconds. ' + (
+            'Open our question using the brief.' if opening else
+            'Answer the listener follow-up.' if followup else
+            'Respond to your co-host and wrap up.' if wrap else
+            'Respond to what your co-host actually said; advance your angle.')
         await emit({'type': 'floor', 'host': index})
         await send(index, 'session.instructions.append', cue)
+        if opening:
+            await send(index, 'session.commentary.append', 'We are Mara and Eli, your AI hosts. Today we are unpacking the listener’s question together.')
 
     async with AsyncExitStack() as stack:
         try:

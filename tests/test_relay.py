@@ -78,3 +78,14 @@ def test_relay_admission_never_opens_upstream(client, monkeypatch, scenario):
             while True:
                 assert ws.receive_json()["type"] == "relay-error"
     run.assert_not_called()
+
+
+def test_deployment_manifest_contains_runtime_dependencies():
+    import tomllib
+    from pathlib import Path
+    project = tomllib.loads(Path('pyproject.toml').read_text())
+    dependencies = set(project['project']['dependencies'])
+    assert set(Path('requirements.txt').read_text().splitlines()) <= dependencies
+    lock = tomllib.loads(Path('uv.lock').read_text())
+    names = {package['name'] for package in lock['package']}
+    assert {'websockets', 'uvicorn', 'fastapi'} <= names

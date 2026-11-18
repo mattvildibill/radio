@@ -172,6 +172,7 @@ async function relaySegment(r, firstHost = 0) {
         if (e.type === 'session.closed') log('session-closed', {host: names[index], reason: e.reason, segment: r.segment});
         renderUsage();
       } else if (e.type.includes('transcript.delta')) transcript(index, e);
+      else log('host-event', {host:names[index], event:e});
     } else if (event.type === 'ready') {
       clearTimeout(setupTimer);
       if (r.stopping) { ws.send(JSON.stringify({type:'stop'})); return; }
