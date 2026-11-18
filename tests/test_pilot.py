@@ -85,7 +85,7 @@ def test_sessions_use_server_config_and_close_capabilities(client, monkeypatch):
         assert payload['session']['model'] == 'gpt-live-1'
         assert payload['session']['audio']['output']['voice'] == voice
         assert payload['session']['store'] is False and payload['session']['delegation'] == {'type': 'client'}
-        assert 'Researched facts' in payload['session']['input'][0]['content'][0]['text']
+        assert 'A grounded claim' in payload['session']['input'][0]['content'][0]['text']
         upstream.return_value = {}
         assert client.post('/api/close', json={'ticket': response.json()['close_ticket']}, headers=ORIGIN).status_code == 200
         assert upstream.call_args.args[0] == '/live/sessions/live_test_' + str(i) + '/hangup'
@@ -149,7 +149,7 @@ def test_unknown_host_cannot_turn_probe_into_ssrf(client):
 
 @pytest.mark.parametrize('mutation,code', [
     ('token-limit', 'research_token_limit'), ('no-text', 'research_text_missing'),
-    ('null-brief', 'research_fields_missing'), ('empty-angle', 'research_fields_missing'),
+    ('null-brief', 'research_fields_missing'), ('empty-title', 'research_fields_missing'),
     ('null-sources', 'research_sources_missing'), ('refusal', 'research_refused'),
 ])
 def test_research_failure_reports_reason_and_usage_without_another_call(client, monkeypatch, mutation, code):
@@ -160,7 +160,7 @@ def test_research_failure_reports_reason_and_usage_without_another_call(client, 
         result.update(status='incomplete', incomplete_details={'reason': 'max_output_tokens'})
     elif mutation == 'no-text': result['output'] = result['output'][:1]
     elif mutation == 'null-brief': result['output'][1]['content'][0]['text'] = 'null'
-    elif mutation == 'empty-angle': result['output'][1]['content'][0]['text'] = json.dumps(dict(BRIEF, eli_angle='   '))
+    elif mutation == 'empty-title': result['output'][1]['content'][0]['text'] = json.dumps(dict(BRIEF, title='   '))
     elif mutation == 'null-sources':
         result['output'][0]['action']['sources'] = None
         result['output'][1]['content'][0]['annotations'] = None
@@ -213,11 +213,11 @@ async def test_negotiation_diagnostics_redact_server_credential(client, monkeypa
 def test_cited_sources_precede_search_discoveries(client, monkeypatch):
     unlock(client)
     result = researched()
-    result['output'][1]['content'][0]['text'] = json.dumps(dict(BRIEF, facts='The reporting at https://example.org/report supports this; https://invented.example is not a search source.'))
+    result['output'][1]['content'][0]['text'] = json.dumps(dict(BRIEF, evidence=[dict(BRIEF['evidence'][0], source_url='https://example.org/report')]))
     monkeypatch.setattr(web, 'openai', AsyncMock(return_value=result))
     response = client.post('/api/research', json={'question': 'a real topic'}, headers=ORIGIN)
     urls = [s['url'] for s in response.json()['sources']]
-    assert set(urls) == {'https://example.org/report', 'https://example.org/primary'}
+    assert urls == ['https://example.org/report', 'https://example.org/primary']
 
 @pytest.mark.parametrize('field,value,code', [
     ('conversation', {'mode':'debate'}, 'research_plan_missing'),
@@ -242,3 +242,20 @@ def test_unfinished_thought_can_continue_once_without_starving_followups():
     assert not continue_thought('For example', False, 30, False)
     assert not continue_thought('For example', False, 10, True)
     assert not continue_thought('A complete sentence.', False, 10, False)
+
+
+def test_citation_identity_ignores_only_tracking():
+    assert web.source_identity('https://example.org/report?utm_source=chatgpt.com#section') == web.source_identity('https://example.org/report')
+    assert web.source_identity('https://example.org/report?id=1') != web.source_identity('https://example.org/report?id=2')
+    assert web.source_identity('https://other.org/report') != web.source_identity('https://example.org/report')
+
+
+def test_unlinked_extra_card_is_excluded_without_losing_valid_research(client, monkeypatch):
+    unlock(client)
+    result = researched()
+    result['output'][1]['content'][0]['text'] = json.dumps(dict(BRIEF, evidence=BRIEF['evidence'] + [dict(BRIEF['evidence'][0], claim='Unsupported', source_url='https://invented.example')]))
+    monkeypatch.setattr(web, 'openai', AsyncMock(return_value=result))
+    response = client.post('/api/research', json={'question':'A topic'}, headers=ORIGIN)
+    assert response.status_code == 200
+    assert response.json()['brief']['evidence'] == BRIEF['evidence']
+    assert '1 draft evidence cards were excluded' in response.json()['brief']['uncertainties']

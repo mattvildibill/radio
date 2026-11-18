@@ -74,8 +74,8 @@ single-use admission control. No Vercel protection settings are changed by code.
   sessions finalize before the next pair starts with the aired conversation
   and follow-ups as context. The whole show remains capped at nine minutes.
   No database, new hosting service, or paid Vercel feature is needed.
-  Direct WebRTC remains an opt-in development path (`?transport=webrtc`); the
-  default user flow uses the relay verified on the private Preview.
+  The player uses one verified relay path. The experimental WebRTC player was
+  removed so conversation rules no longer diverge between transports.
 - The controller assigns the floor, routes only on-air audio to the listener and
   co-host, and waits for measured media silence before handoff. A finish-your-thought cue at 28 seconds and a 40-second floor
   cap bound monologues. Short `session.commentary.append` cues actually trigger
@@ -86,9 +86,9 @@ single-use admission control. No Vercel protection settings are changed by code.
   follow-up is added to both at the next handoff. The next host is cued to answer.
 - Stop, nine-minute timeout, hidden tab, suspended audio, offline state, peer
   disconnect, or provider error closes both sessions. Normal closure waits for
-  `session.closed`; missing finalization is disclosed. Unload also sends server
-  hangup beacons and closes peers. Browser/process crashes rely on OpenAI's
-  transport-disconnect handling; a beacon is best effort, not a server watchdog.
+  `session.closed`; missing finalization is disclosed. Unload sends Stop and closes
+  the relay socket. The connection-owned server task closes both upstream sessions;
+  abrupt process loss still depends on provider transport-disconnect handling.
 - No automatic HTTP retries or model fallback, including quota/spend-limit errors.
 - Usage: record the latest cumulative `usage.seconds` per host, replace rather
   than add snapshots, retain final usage and research tokens in downloadable notes.
@@ -107,8 +107,8 @@ Recording is opt-in, via **Record & save**. MediaRecorder captures the compresse
 mixed stream before listener volume control. No microphone is requested.
 Recordings and metadata are stored in **IndexedDB on this browser/device/origin**,
 not uploaded. The library has a 100 MB application cap; storage/quota failures
-surface an export link. One-second checkpoints retain partial audio on abrupt
-closure, marked “Recording · interrupted.”
+surface an export link. One-second chunks are appended independently, without rewriting growing audio blobs.
+Partial audio is retained on abrupt closure, marked “Recording · interrupted.”
 
 Each replay says **Recording**, shows the original local date/time with the
 recorded IANA time zone, elapsed age, duration, research timestamp and source
@@ -183,3 +183,25 @@ Reference contracts checked against OpenAI Python SDK 3.55.0 and official docs:
 [GPT-Live pricing](https://developers.openai.com/api/docs/models/gpt-live-1).
 The runtime uses direct HTTPX and WebSocket calls; no AI Gateway, older integration, or SDK
 retry behavior is involved.
+
+## Adaptive conversation
+
+The producer selects taste, news, explainer, advice, speculation, or mixed based
+on listener intent. Taste episodes explore specific works and different criteria;
+news episodes require named dated events, affected people and explicit unknowns.
+The structured brief includes source-linked claims, limitations, an opening idea,
+optional threads, and separate host interests. Mara notices craft and mechanisms;
+Eli follows emotional impact and unexpected connections. Neither is assigned an
+opposing conclusion. Agreement, questions and changed minds are welcome.
+
+Floor cues vary; contributions may be short reactions or fuller thoughts. An
+explicitly unfinished thought can get one continuation, unless a listener is
+waiting. Silence-based handoffs remain sequential: overlap is intentionally deferred.
+Across relay segments, bounded memory preserves the opening, recent actual spoken
+words, stated views and delivered requests, without another paid summarization call.
+Up to eight follow-ups queue in order with visible delivery status. Pending requests
+survive a planned segment transition. Delivered does not prove the model answered well.
+
+Replays can be renamed and searched by title or original question. New recordings
+include exported transcript/research/usage notes; existing whole-blob recordings
+remain readable after the IndexedDB upgrade. No new hosting or storage service is used.

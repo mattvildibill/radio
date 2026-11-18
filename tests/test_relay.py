@@ -127,3 +127,23 @@ def test_stop_before_ready_closes_both_sessions(monkeypatch):
     assert browser.events[-1]['finalized']
     assert not any(e['type'] == 'audio' for e in browser.events)
     assert all(any(e['type'] == 'session.close' for e in s.sent) for s in upstreams)
+
+
+def test_followups_deliver_in_order_and_preserve_unanswered_items(monkeypatch):
+    upstreams = [Upstream(), Upstream()]
+    connections = iter(upstreams)
+    monkeypatch.setattr(relay, 'connect', lambda *args, **kwargs: next(connections))
+    class QueuedBrowser(Browser):
+        async def send_json(self, event):
+            await super().send_json(event)
+            if event['type'] == 'followup-delivered' and event['id'] == '2':
+                await self.incoming.put(json.dumps({'type':'stop'}))
+    browser = QueuedBrowser()
+    async def scenario():
+        for n in range(1,4):
+            await browser.incoming.put(json.dumps({'type':'followup','id':str(n),'text':f'Question {n}'}))
+        await asyncio.wait_for(relay.run_relay(browser, [{'audio': {}}, {'audio': {}}], 'test-key', 210), 5)
+    asyncio.run(scenario())
+    assert [e['id'] for e in browser.events if e['type']=='followup-delivered'] == ['1','2']
+    assert browser.events[-1]['pending_followups'] == [{'id':'3','text':'Question 3'}]
+    assert browser.events[-1]['finalized']
