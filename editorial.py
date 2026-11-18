@@ -53,3 +53,8 @@ def continue_thought(text, already_continued, turn_age, followups_waiting):
     tail = text.rstrip().lower()
     return bool(tail) and not already_continued and turn_age < 28 and not followups_waiting and (
         tail.endswith((',', ':', '—', '...')) or tail.endswith(('one more thing', 'for example')))
+
+
+def handoff_pause(text):
+    # A mid-sentence breath should not hand the floor away.
+    return 1.25 if text.rstrip().endswith(('.', '?', '!')) and not text.rstrip().endswith('...') else 2.25

@@ -259,3 +259,9 @@ def test_unlinked_extra_card_is_excluded_without_losing_valid_research(client, m
     assert response.status_code == 200
     assert response.json()['brief']['evidence'] == BRIEF['evidence']
     assert '1 draft evidence cards were excluded' in response.json()['brief']['uncertainties']
+
+
+def test_handoff_allows_an_unfinished_phrase_more_breathing_room():
+    from editorial import handoff_pause
+    assert handoff_pause("I'm curious") > handoff_pause('What do you think?')
+    assert handoff_pause('For example...') > handoff_pause('That lands beautifully.')
