@@ -372,17 +372,22 @@ async def close(request: Request):
 @app.websocket('/api/live')
 async def live_relay(socket: WebSocket):
     from relay import run_relay
+    accepted = False
     try:
         same_origin(socket)
+        await socket.accept()
+        accepted = True
         preview_only()
         owner = authorize(socket)['owner']
         await protected_preview(socket)
-        await socket.accept()
         import asyncio
         raw = await asyncio.wait_for(socket.receive_text(), 10)
         if len(raw) > 80000:
             raise ValueError('Oversized relay request')
         data = json.loads(raw)
+        if data.get('type') == 'check':
+            await socket.send_json({'type': 'check-ok'})
+            return
         show = verify(text_field(data, 'ticket', 50000), 'brief')
         if show['owner'] != owner:
             raise ValueError('Wrong browser session')
@@ -395,6 +400,9 @@ async def live_relay(socket: WebSocket):
             raise ValueError('Invalid relay context')
         await run_relay(socket, [host_config(show, i) for i in range(2)], os.environ['OPENAI_API_KEY'],
                         duration, history, first=not bool(history), first_host=first_host)
+    except HTTPException as error:
+        if accepted:
+            await socket.send_json({'type': 'relay-error', 'message': error.detail})
     except Exception:
         # Do not log credentials, tickets, or transport data from a failed socket.
         pass

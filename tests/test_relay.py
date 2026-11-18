@@ -75,5 +75,6 @@ def test_relay_admission_never_opens_upstream(client, monkeypatch, scenario):
         with client.websocket_connect('wss://' + web.PREVIEW_HOST + '/api/live', headers=origin) as ws:
             ws.send_json({'ticket': 'forged' if scenario == 'bad-ticket' else ticket,
                           'duration': 999 if scenario == 'bad-duration' else 90})
-            ws.receive_json()
+            while True:
+                assert ws.receive_json()["type"] == "relay-error"
     run.assert_not_called()

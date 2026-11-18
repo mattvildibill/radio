@@ -121,6 +121,19 @@ async function hasDirectAudio(r) {
   } finally { pc.close(); }
 }
 
+async function checkRelay() {
+  await new Promise((resolve, reject) => {
+    const ws = new WebSocket(location.origin.replace(/^http/, 'ws') + '/api/live');
+    let finished = false;
+    const finish = error => { if (finished) return; finished = true; clearTimeout(timer); ws.close(); error ? reject(new Error(error)) : resolve(); };
+    const timer = setTimeout(() => finish('Audio relay connection timed out before research. No OpenAI calls were made.'), 15000);
+    ws.onopen = () => ws.send(JSON.stringify({type: 'check'}));
+    ws.onmessage = ({data}) => { const e = JSON.parse(data); if (e.type === 'check-ok') finish(); else if (e.type === 'relay-error') finish(e.message); };
+    ws.onclose = e => finish(`Audio relay connection closed (${e.code}) before research. No OpenAI calls were made.`);
+    ws.onerror = () => finish('This browser could not open the secure audio relay. No OpenAI calls were made.');
+  });
+}
+
 function playRelayAudio(r, encoded) {
   const bytes = Uint8Array.from(atob(encoded), c => c.charCodeAt(0));
   const view = new DataView(bytes.buffer), buffer = r.context.createBuffer(1, bytes.length / 2, 24000);
@@ -341,6 +354,7 @@ async function startShow(event, pilot = false) {
     r.directAudio = await hasDirectAudio(r);
     if (r.stopping) return;
     log('audio-transport', {mode: r.directAudio ? 'webrtc' : 'relay'});
+    if (!r.directAudio) await checkRelay();
     setStatus('The producer is researching…');
     show = await api('/api/research', {question: $('question').value.trim()}, {signal: r.abort.signal});
     if (r.stopping) return;
