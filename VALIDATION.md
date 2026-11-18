@@ -161,3 +161,21 @@ natural ending, explicit Stop, saved recording, and post-reload replay evidence.
 The test browser cannot provide a subjective listening review; captured audio,
 co-host input transcripts, and signal measurements are retained separately from
 that judgment. Safari/mobile and crash-finalization timing remain untested.
+
+## November 18 follow-up: continuity and event-led research
+
+After owner feedback about choppy sound and generic coverage, added a 240 ms
+continuous playback timeline, retained partial PCM frames until complete, and
+paced relay output against absolute deadlines to prevent accumulated clock drift.
+Two new timing tests cover bursty arrivals and rebuffering after a true underrun.
+37 Python and 11 JavaScript tests pass. The revised audio has not had a new
+subjective listening review; this is a targeted fix, not proof of perceived quality.
+
+A real Responses request on the private Preview using the owner's outages/hacks
+question completed successfully with two searches, 21,842 input and 1,724 output
+tokens. Its new opening_story, event_cards and episode_arc fields identified four
+named dated incidents with source URLs and distinctions between compromise,
+technical failure and unresolved cause. These are generated research results,
+not an independent fact-check of every incident. No voice sessions were started
+for that research-only check. Hosts are now cued to use concrete events in the
+first minute and throughout, with no invented anecdotes or causal connections.

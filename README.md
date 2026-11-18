@@ -61,7 +61,7 @@ single-use admission control. No Vercel protection settings are changed by code.
 ## Live show and cost controls
 
 - Responses: `gpt-5.6-luna`, web search, at most three tool calls, 6,000 output
-  tokens shared by reasoning and the final brief, low reasoning, a 600-word brief,
+  tokens shared by reasoning and the final brief, low reasoning, a 1,000-word editorial brief,
   no stored response. Sources come from actual search
   actions/citations; no sourced brief means no host sessions.
 - GPT-Live: `gpt-live-1`, `store: false`, client delegation. No paid backend
