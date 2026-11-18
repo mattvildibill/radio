@@ -34,8 +34,19 @@ function savePilotReport() {
 
 async function api(path, payload, options = {}) {
   const response = await fetch(path, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload), ...options});
-  const data = await response.json();
-  if (!response.ok) throw new Error(typeof data.detail === 'string' ? data.detail : 'The request could not be completed.');
+  let data;
+  try { data = await response.json(); }
+  catch {
+    const error = new Error(`The server returned an unreadable response (HTTP ${response.status}). No automatic retry was made.`);
+    log('api-failure', {path, status: response.status}); throw error;
+  }
+  if (!response.ok) {
+    const detail = data.detail;
+    const error = new Error(typeof detail === 'string' ? detail : detail?.message || 'The request could not be completed.');
+    log('api-failure', {path, status: response.status, diagnostic: detail?.diagnostic || null, message: error.message});
+    if (path === '/api/research') { notes.research_failure = detail?.diagnostic || {message: error.message}; renderUsage(); }
+    throw error;
+  }
   return data;
 }
 function log(type, data = {}) {
@@ -71,7 +82,7 @@ function renderResearch() {
   sourceList($('sources'), show.sources);
 }
 function renderUsage() {
-  const usage = {research: show?.research_usage || null, web_search_calls: show?.search_calls || 0,
+  const usage = {research: show?.research_usage || notes.research_failure?.usage || null, research_failure: notes.research_failure || null, web_search_calls: show?.search_calls || notes.research_failure?.search_calls || 0,
     voice: notes.usage.map((u, i) => ({host: names[i], ...u}))};
   $('usage').textContent = JSON.stringify(usage, null, 2);
 }

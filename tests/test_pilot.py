@@ -55,6 +55,8 @@ def test_research_required_and_bound_to_browser(client, monkeypatch):
     assert len(show['sources']) == 2 and show['research_usage']['input_tokens'] == 123
     payload = upstream.call_args.args[1]
     assert payload['tools'][0]['type'] == 'web_search' and payload['store'] is False and payload['max_tool_calls'] == 3
+    assert payload['max_output_tokens'] == 6000
+    assert all(field['minLength'] == 1 for field in payload['text']['format']['schema']['properties'].values())
     upstream.assert_awaited_once()
     unlock(client)
     assert client.post('/api/session', json={'host': 0, 'sdp': 'offer', 'ticket': show['ticket']}, headers=ORIGIN).status_code == 403
@@ -140,3 +142,53 @@ def test_unauthenticated_probe_is_inert_and_never_uses_provider(client, monkeypa
 def test_unknown_host_cannot_turn_probe_into_ssrf(client):
     response = client.get('/api/status', headers={'host': 'another-project.vercel.app'})
     assert response.status_code == 403
+
+
+@pytest.mark.parametrize('mutation,code', [
+    ('token-limit', 'research_token_limit'), ('no-text', 'research_text_missing'),
+    ('null-brief', 'research_fields_missing'), ('empty-angle', 'research_fields_missing'),
+    ('null-sources', 'research_sources_missing'), ('refusal', 'research_refused'),
+])
+def test_research_failure_reports_reason_and_usage_without_another_call(client, monkeypatch, mutation, code):
+    unlock(client)
+    result = researched()
+    result['usage']['output_tokens_details'] = {'reasoning_tokens': 400}
+    if mutation == 'token-limit':
+        result.update(status='incomplete', incomplete_details={'reason': 'max_output_tokens'})
+    elif mutation == 'no-text': result['output'] = result['output'][:1]
+    elif mutation == 'null-brief': result['output'][1]['content'][0]['text'] = 'null'
+    elif mutation == 'empty-angle': result['output'][1]['content'][0]['text'] = json.dumps(dict(BRIEF, eli_angle='   '))
+    elif mutation == 'null-sources':
+        result['output'][0]['action']['sources'] = None
+        result['output'][1]['content'][0]['annotations'] = None
+    elif mutation == 'refusal': result['output'][1]['content'] = [{'type': 'refusal', 'refusal': 'private provider text'}]
+    result['private_provider_field'] = 'never expose this field'
+    upstream = AsyncMock(return_value=result); monkeypatch.setattr(web, 'openai', upstream)
+    response = client.post('/api/research', json={'question': 'a real topic'}, headers=ORIGIN)
+    assert response.status_code == 502
+    diagnostic = response.json()['detail']['diagnostic']
+    assert diagnostic['code'] == code
+    assert diagnostic['usage'] == {'input_tokens': 123, 'output_tokens': 456, 'reasoning_tokens': 400}
+    assert 'never expose' not in response.text and 'private provider text' not in response.text
+    assert 'ticket' not in response.json()
+    upstream.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('status,code,phrase', [
+    (401, 'invalid_api_key', 'invalid'), (404, 'model_not_found', 'model is unavailable'),
+    (429, 'insufficient_quota', 'insufficient API credit'),
+])
+async def test_provider_failures_are_actionable_without_exposing_raw_message(client, monkeypatch, status, code, phrase):
+    calls = []
+    class Transport:
+        async def __aenter__(self): return self
+        async def __aexit__(self, *args): pass
+        async def post(self, *args, **kwargs):
+            calls.append(1)
+            return httpx.Response(status, json={'error': {'code': code, 'message': 'key-or-provider-secret'}})
+    monkeypatch.setattr(web.httpx, 'AsyncClient', lambda **kwargs: Transport())
+    with pytest.raises(web.HTTPException) as error: await web.openai('/responses', {})
+    assert phrase in error.value.detail
+    assert 'key-or-provider-secret' not in error.value.detail
+    assert len(calls) == 1

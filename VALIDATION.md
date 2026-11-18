@@ -150,3 +150,31 @@ The user can run this bounded test in their already-authenticated Codex browser
 without changing permissions or adding a password. No real OpenAI spend has
 been incurred by the agent as of this update. This runner is an executable
 acceptance path, not a claim that real voice acceptance has already passed.
+
+## Research failure follow-up
+
+The owner reported that a typed question reached the researching state and then
+failed. The exact error is pending; no claim is made about its root cause. The
+radio-scoped runtime-log query returned HTTP 403, so its failure logs were not
+available to the agent. No additional real API attempt was made.
+
+Corrected two weaknesses in the request contract: the original 2,600-token cap
+included reasoning as well as the answer; it is now 6,000 with an explicit
+600-word brief and the same three-search limit. The structured schema now
+requires nonempty strings, matching the app's admission rules.
+
+Failure handling distinguishes output exhaustion, refusal, missing search,
+missing sources, absent text, malformed JSON and incomplete brief fields. It
+retains allowlisted token/search usage without returning raw provider output.
+Known API errors distinguish invalid credentials, model access, credit/quota and
+rate limits. No failure automatically retries or starts host sessions. Optional
+null source/annotation lists and a null JSON brief now fail cleanly instead of
+raising an unhandled exception.
+
+27 Python tests pass, including nine new failure regression cases. Browser
+syntax checks pass. The local UI fixture for an exhausted output allowance
+displayed the specific error, returned both hosts to Off air, and retained the
+fixture's token usage and diagnostic code in Show notes & usage. This was not a
+real API call and does not establish which failure the owner encountered.
+The owner's failed attempt may have incurred research usage; its amount is
+unknown. Live audio acceptance is still pending.
