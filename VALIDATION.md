@@ -128,3 +128,36 @@ before this work may have incurred usage outside this evidence.
   a server-enforced app-level hard cap.
 - Physical Safari/mobile and direct WebRTC audio in another browser are not
   verified. The default relay is the verified path.
+
+
+## Final build check and usage ledger
+
+Application commit `eccefbd` passed another real typed-question run: **"Why do
+cities feel hotter than nearby countryside, and what actually helps?"** Research
+completed before speech. Mara introduced the urban heat mechanism; Eli answered
+her question with cooling-policy tradeoffs, and Mara responded to his point.
+An explicit **End show** click at 51 seconds stopped recording and both sessions
+returned **51 seconds**, final, `close_requested`. The recording saved normally.
+Research used **12,968 input tokens** (4,591 cached), **1,109 output** (196
+reasoning), 14,077 total, one search call.
+
+The adjusted full-show mix measured **-19.33 LUFS integrated**, **-0.18 dBTP**,
+5.3 LU loudness range. Sampled opening host segments were -20.22 LUFS (Mara)
+and -18.80 LUFS (Eli), reducing the earlier four-decibel difference to about 1.4.
+Generated output varies across turns; this is measured evidence, not a claim of
+subjective listening or a guarantee about every future show.
+
+Confirmed accumulated agent voice usage across retained tests is **1,373
+session-seconds**, approximately **$1.144** at the documented rate. Seven retained
+research snapshots total **99,663 tokens**; one earlier research snapshot and one
+failed WebRTC pair's final seconds are unretained. Eight research requests ran in
+all. These are API observations and estimates, not the OpenAI account invoice.
+The $15 budget was not changed. No quota/spend error was automatically retried.
+
+Final checks: 37 Python tests, 9 JavaScript tests, browser syntax checks, locked
+dependency validation, and clean diff checks passed. The default app path has
+real startup, reciprocal audio, typed follow-up, full-duration continuation,
+natural ending, explicit Stop, saved recording, and post-reload replay evidence.
+The test browser cannot provide a subjective listening review; captured audio,
+co-host input transcripts, and signal measurements are retained separately from
+that judgment. Safari/mobile and crash-finalization timing remain untested.
