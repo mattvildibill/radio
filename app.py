@@ -371,7 +371,6 @@ async def close(request: Request):
 
 @app.websocket('/api/live')
 async def live_relay(socket: WebSocket):
-    from relay import run_relay
     accepted = False
     try:
         same_origin(socket)
@@ -386,6 +385,7 @@ async def live_relay(socket: WebSocket):
             raise ValueError('Oversized relay request')
         data = json.loads(raw)
         if data.get('type') == 'check':
+            from relay import run_relay
             await socket.send_json({'type': 'check-ok'})
             return
         show = verify(text_field(data, 'ticket', 50000), 'brief')
@@ -398,14 +398,19 @@ async def live_relay(socket: WebSocket):
             raise ValueError('Invalid duration')
         if not isinstance(history, str) or len(history) > 18000 or type(first_host) is not int or first_host not in (0, 1):
             raise ValueError('Invalid relay context')
+        from relay import run_relay
         await run_relay(socket, [host_config(show, i) for i in range(2)], os.environ['OPENAI_API_KEY'],
                         duration, history, first=not bool(history), first_host=first_host)
     except HTTPException as error:
         if accepted:
             await socket.send_json({'type': 'relay-error', 'message': error.detail})
-    except Exception:
+    except Exception as error:
         # Do not log credentials, tickets, or transport data from a failed socket.
-        pass
+        if accepted:
+            try:
+                await socket.send_json({'type': 'relay-error', 'message': 'Audio relay setup failed (' + type(error).__name__ + '). No automatic retry was made.'})
+            except Exception:
+                pass
     finally:
         try:
             await socket.close()
