@@ -10,3 +10,11 @@ document.getElementById('check').onclick = async () => {
   render();
   setTimeout(() => { render(); pc.close(); }, 10000);
 };
+
+document.getElementById('socket').onclick = () => {
+ const out = document.getElementById('socket-result');
+ const ws = new WebSocket(location.origin.replace(/^http/, 'ws') + '/echo');
+ ws.onmessage = e => out.textContent = e.data;
+ ws.onerror = () => out.textContent = 'WebSocket failed';
+ ws.onclose = e => out.textContent += ' Close code ' + e.code;
+};

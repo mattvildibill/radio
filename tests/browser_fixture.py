@@ -25,3 +25,10 @@ def check():
 def network_check(): return FileResponse(ROOT / 'tests/network_fixture.html')
 fixture.mount('/assets', StaticFiles(directory=ROOT / 'site/assets'))
 fixture.mount('/checks', StaticFiles(directory=ROOT / 'tests'))
+
+from fastapi import WebSocket
+@fixture.websocket('/echo')
+async def echo(socket: WebSocket):
+    await socket.accept()
+    await socket.send_text('WebSocket connected. No API call.')
+    await socket.close()

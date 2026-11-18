@@ -1,4 +1,5 @@
 {
   "framework": "fastapi",
+  "fluid": true,
   "functions": {"app.py": {"maxDuration": 300}}
 }
