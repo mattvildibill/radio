@@ -157,6 +157,11 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 del buffers[active][:len(chunk)]
                 frame = chunk.ljust(FRAME_BYTES, b'\x00')
                 values = array('h', frame)
+                # Auditioned pilot: Vesper was ~4 dB below Gleam. Balance both
+                # the listener mix and what the co-host hears, before limiting.
+                gain = 0.9 if active == 0 else 1.4
+                values = array('h', (max(-32768, min(32767, round(v * gain))) for v in values))
+                frame = values.tobytes()
                 rms = math.sqrt(sum(v * v for v in values) / len(values)) / 32768
                 if rms > 0.009:
                     last_sound, heard = tick, True
@@ -168,13 +173,16 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 if int(elapsed) != last_meter:
                     last_meter = int(elapsed)
                     await emit({'type': 'meter', 'host': active, 'rms': round(rms, 4)})
-                if (heard and tick - since > 3.5 and tick - last_sound > 1.25) or tick - since > 40:
+                if (heard and tick - since > 3.5 and tick - last_sound > 1.0) or tick - since > 40:
                     # Rotate only at a natural handoff, below Hobby's 300s cap.
                     if duration == 210 and elapsed >= 180:
                         stop.set()
                         break
+                    if duration < 210 and duration - elapsed < 15:
+                        stop.set()
+                        break
                     turn += 1
-                    await floor(other, wrap=duration < 210 and duration - elapsed < 35)
+                    await floor(other, wrap=duration < 210 and duration - elapsed < 65)
                     since = last_sound = time.monotonic()
                     heard = recovered = False
                 elif not heard and tick - since > 20:

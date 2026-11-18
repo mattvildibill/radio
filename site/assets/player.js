@@ -248,7 +248,7 @@ async function connectHost(r, index) {
     host.analyser = r.context.createAnalyser(); host.analyser.fftSize = 1024;
     host.samples = new Float32Array(host.analyser.fftSize);
     host.gate = r.context.createGain(); host.gate.gain.value = 0;
-    const level = r.context.createGain(); level.gain.value = index === 0 ? 0.85 : 0.9;
+    const level = r.context.createGain(); level.gain.value = index === 0 ? 0.9 : 1.4;
     host.source.connect(level); level.connect(host.analyser); host.analyser.connect(host.gate);
     host.gate.connect(r.mix); host.gate.connect(r.inputs[1 - index]);
     // No own-output-to-own-input path; the co-host hears only on-air speech.
@@ -355,7 +355,9 @@ async function startShow(event, pilot = false) {
   r.capture = context.createMediaStreamDestination(); r.mix.connect(r.master); r.master.connect(context.destination); r.mix.connect(r.capture);
   try {
     setStatus('Preparing studio audio…');
-    r.directAudio = await hasDirectAudio(r);
+    // Use the verified same-project relay by default. Direct WebRTC remains
+    // opt-in for transport testing on browsers with working ICE networking.
+    r.directAudio = new URLSearchParams(location.search).get('transport') === 'webrtc' && await hasDirectAudio(r);
     if (r.stopping) return;
     log('audio-transport', {mode: r.directAudio ? 'webrtc' : 'relay'});
     if (!r.directAudio) await checkRelay();
@@ -536,11 +538,13 @@ async function renderLibrary() {
       };
       const links = document.createElement('ul'); links.className = 'sources'; sourceList(links, record.sources);
       const researched = document.createElement('p'); researched.className = 'small'; researched.textContent = 'Original research: ' + new Date(record.researchedAt).toLocaleString();
+      const sourceDetails = document.createElement('details'), sourceSummary = document.createElement('summary');
+      sourceSummary.textContent = 'Original sources'; sourceDetails.append(sourceSummary, researched, links);
       const actions = document.createElement('div'); actions.className = 'actions';
       const exportLink = blobLink(record.audio, 'radio-' + record.id + (record.mimeType.includes('mp4') ? '.m4a' : '.webm'), 'Export audio');
       const remove = document.createElement('button'); remove.className = 'text-button'; remove.textContent = 'Delete recording';
       remove.onclick = async () => { if (confirm('Delete this private recording from this browser? Export a copy first if you want to keep it.')) { await library.remove(record.id); await renderLibrary(); } };
-      actions.append(exportLink, remove); article.append(badge, title, meta, audio, researched, links, actions); $('library').append(article);
+      actions.append(exportLink, remove); article.append(badge, title, meta, audio, sourceDetails, actions); $('library').append(article);
     }
   } catch (error) { $('library').textContent = 'Replay storage is unavailable: ' + error.message; }
 }
