@@ -164,3 +164,9 @@ def test_off_air_speech_is_drained_before_opening_the_audio_gate(monkeypatch):
     aired=[array('h',base64.b64decode(e['pcm'])) for e in browser.events if e['type']=='audio']
     assert aired and all(min(frame)>=0 for frame in aired)
     assert browser.events[-1]['finalized']
+
+
+def test_queued_silence_does_not_block_natural_handoffs():
+    assert not relay.queued_speech(relay.SILENCE * 8)
+    assert relay.queued_speech(relay.SILENCE * 8 + array('h', [8192] * 960).tobytes())
+    assert not relay.queued_speech(b'')

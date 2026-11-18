@@ -247,7 +247,7 @@ This verified that concrete events reached the spoken output rather than staying
 only in the producer brief. It also exposed off-air fragments at handoffs, leading
 to the audio-gate settling change and a dedicated regression test.
 
-Local verification: 46 Python tests and 14 JavaScript tests pass, including FIFO
+Local verification: 47 Python tests and 14 JavaScript tests pass, including FIFO
 follow-ups, off-air audio exclusion, source validation, v1 replay migration,
 chunk ordering, storage-cap failure without overwriting captured audio, and
 continuation memory. JavaScript syntax and the locked Python dependencies pass.
@@ -275,3 +275,8 @@ session-seconds, approximately $1.16 voice, plus separate research/search usage.
 The successful four-mode research matrix and these three show briefs used 108,848
 tokens; intermediate/failed research above is additional. These are retained
 request measurements, not an account balance or complete OpenAI billing export.
+
+Final code review also distinguished queued silence from queued speech: silent
+frames cannot hold the floor until its hard cap, while pending speech must drain.
+A regression test covers silence followed by speech. This small final relay change
+was unit-verified; the real final gate audition above used c7f3405.

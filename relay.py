@@ -15,6 +15,15 @@ FRAME_BYTES = 1920  # 40 ms of mono PCM16 at 24 kHz
 SILENCE = bytes(FRAME_BYTES)
 
 
+def queued_speech(pcm):
+    """Silence frames must not hold the floor; queued speech must finish."""
+    for offset in range(0, len(pcm), FRAME_BYTES):
+        values = array('h', pcm[offset:offset + FRAME_BYTES])
+        if values and sum(v * v for v in values) / len(values) > (0.009 * 32768) ** 2:
+            return True
+    return False
+
+
 async def run_relay(browser, configs, key, duration, history='', first=True, first_host=0):
     sockets, tasks = [], []
     ready = [asyncio.Event(), asyncio.Event()]
@@ -227,7 +236,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 if heard and tick - since > 28 and not nudged:
                     nudged = True
                     await send(active, 'session.instructions.append', 'Finish this thought in one short sentence, then pause for your co-host.')
-                if (heard and not buffers[active] and tick - since > 1.5 and tick - last_sound > handoff_pause(spoken[active])) or tick - since > 40:
+                if (heard and tick - since > 1.5 and tick - last_sound > handoff_pause(spoken[active]) and not queued_speech(buffers[active])) or tick - since > 40:
                     # Rotate only at a natural handoff, below Hobby's 300s cap.
                     if duration == 210 and elapsed >= 180:
                         stop.set()
