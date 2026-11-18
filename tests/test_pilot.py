@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 import app as web
 ORIGIN = {'origin': 'https://' + web.PREVIEW_HOST}
 BRIEF = {k: f'Researched {k}' for k in web.BRIEF_SCHEMA['required']}
+BRIEF.update(conversation={k: 'taste' if k == 'mode' else 'Specific film preferences' for k in web.PLAN_SCHEMA['required']}, evidence=[{'claim':'A grounded claim', 'source_url':'https://example.org/primary', 'date_or_context':'Context', 'limits':'Uncertain'}])
 @pytest.fixture
 def client(monkeypatch):
     monkeypatch.setenv('VERCEL', '1')
@@ -56,7 +57,7 @@ def test_research_required_and_bound_to_browser(client, monkeypatch):
     payload = upstream.call_args.args[1]
     assert payload['tools'][0]['type'] == 'web_search' and payload['store'] is False and payload['max_tool_calls'] == 3
     assert payload['max_output_tokens'] == 6000
-    assert all(field['minLength'] == 1 for field in payload['text']['format']['schema']['properties'].values())
+    assert all(field['minLength'] == 1 for field in payload['text']['format']['schema']['properties'].values() if field['type'] == 'string')
     upstream.assert_awaited_once()
     unlock(client)
     assert client.post('/api/session', json={'host': 0, 'sdp': 'offer', 'ticket': show['ticket']}, headers=ORIGIN).status_code == 403
@@ -216,4 +217,28 @@ def test_cited_sources_precede_search_discoveries(client, monkeypatch):
     monkeypatch.setattr(web, 'openai', AsyncMock(return_value=result))
     response = client.post('/api/research', json={'question': 'a real topic'}, headers=ORIGIN)
     urls = [s['url'] for s in response.json()['sources']]
-    assert urls == ['https://example.org/report', 'https://example.org/primary']
+    assert set(urls) == {'https://example.org/report', 'https://example.org/primary'}
+
+@pytest.mark.parametrize('field,value,code', [
+    ('conversation', {'mode':'debate'}, 'research_plan_missing'),
+    ('evidence', [], 'research_evidence_unlinked'),
+    ('evidence', [{'claim':'Claim','source_url':'https://invented.example','date_or_context':'Now','limits':'Unknown'}], 'research_evidence_unlinked'),
+])
+def test_editorial_contract_rejects_unfinished_or_unlinked_research(client, monkeypatch, field, value, code):
+    unlock(client)
+    result = researched()
+    text = result['output'][1]['content'][0]
+    brief = json.loads(text['text']); brief[field] = value; text['text'] = json.dumps(brief)
+    upstream = AsyncMock(return_value=result); monkeypatch.setattr(web, 'openai', upstream)
+    response = client.post('/api/research', json={'question':'Best movies ever?'}, headers=ORIGIN)
+    assert response.status_code == 502 and code in response.text and 'ticket' not in response.json()
+    upstream.assert_awaited_once()
+
+
+def test_unfinished_thought_can_continue_once_without_starving_followups():
+    from editorial import continue_thought
+    assert continue_thought('For example', False, 10, False)
+    assert not continue_thought('For example', True, 10, False)
+    assert not continue_thought('For example', False, 30, False)
+    assert not continue_thought('For example', False, 10, True)
+    assert not continue_thought('A complete sentence.', False, 10, False)

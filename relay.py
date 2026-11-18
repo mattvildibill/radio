@@ -1,4 +1,6 @@
 """Bounded, connection-owned GPT-Live audio relay; no state between requests."""
+from collections import deque
+from editorial import floor_cue, continue_thought
 import asyncio
 import base64
 import json
@@ -21,8 +23,9 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
     go, stop = asyncio.Event(), asyncio.Event()
     reason = 'show_complete' if duration < 210 else 'segment_complete'
     failure = None
-    pending = ''
+    pending = deque()
     active = first_host
+    spoken = ['', '']
     lock = asyncio.Lock()
     alive = True
 
@@ -83,6 +86,8 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                             failure = 'Audio playback fell too far behind. The show stopped.'
                             stop.set()
                 elif kind in ('session.input_transcript.delta', 'session.output_transcript.delta', 'session.usage.updated'):
+                    if kind == 'session.output_transcript.delta' and index == active:
+                        spoken[index] += event.get('delta', '')
                     safe = {k: event[k] for k in ('type', 'delta', 'start_ms', 'end_ms', 'usage') if k in event}
                     await emit({'type': 'host-event', 'host': index, 'on_air': index == active, 'event': safe})
                 elif kind and ('appended' in kind or kind.endswith('.done')):
@@ -115,31 +120,32 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 elif event.get('type') == 'stop':
                     stop.set()
                 elif event.get('type') == 'followup' and isinstance(event.get('text'), str):
-                    pending = event['text'][:800].strip()
+                    text = event['text'][:800].strip()
+                    if text and len(pending) < 8:
+                        item = {'id': str(event.get('id', ''))[:80], 'text': text}
+                        pending.append(item)
+                        await emit({'type': 'followup-accepted', **item, 'position': len(pending)})
+                    elif text:
+                        await emit({'type': 'followup-rejected', 'id': str(event.get('id', ''))[:80], 'message': 'Eight follow-ups are already queued. Please wait for an answer.'})
         except Exception:
             stop.set()
 
     async def floor(index, opening=False, wrap=False):
         nonlocal active, pending
         active = index
+        spoken[index] = ''
         buffers[0].clear()
         buffers[1].clear()
         await send(1 - index, 'session.instructions.append', 'LISTEN. Stay silent until your next ON AIR cue.')
-        followup = pending
+        followup = pending.popleft() if pending else None
         if followup:
             for i in range(2):
-                await send(i, 'session.thinking.append', json.dumps({'listener_followup': followup}))
-            await emit({'type': 'followup-delivered', 'text': followup, 'host': index})
-            pending = ''
-        cue = 'ON AIR. Speak now for about 20 seconds. ' + (
-            'Open our question using the brief.' if opening else
-            'Answer the listener follow-up.' if followup else
-            'Respond to your co-host and wrap up.' if wrap else
-            'Respond to what your co-host actually said; advance your angle.')
+                await send(i, 'session.thinking.append', json.dumps({'listener_followup': followup['text']}))
+            await emit({'type': 'followup-delivered', **followup, 'host': index})
+        cue = floor_cue(turn, opening, bool(followup), wrap)
         await emit({'type': 'floor', 'host': index})
-        await send(index, 'session.instructions.append', cue)
-        await send(index, 'session.commentary.append',
-            'Briefly introduce Mara and Eli as AI hosts. Open with the named, dated real-world story in the producer opening, who was affected, and why it matters to the listener.' if opening else cue)
+        await send(index, 'session.instructions.append', 'ON AIR. You have the floor. Respond naturally; you do not need a counterargument.')
+        await send(index, 'session.commentary.append', cue)
 
     async with AsyncExitStack() as stack:
         try:
@@ -165,7 +171,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
             if not await wait_or_stop(go.wait(), 10):
                 return
             started = since = last_sound = next_frame = time.monotonic()
-            heard = recovered = nudged = False
+            heard = recovered = nudged = continued = False
             turn, last_meter = 1, -1
             await floor(active, opening=first)
             while not stop.is_set():
@@ -197,7 +203,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 if heard and tick - since > 28 and not nudged:
                     nudged = True
                     await send(active, 'session.instructions.append', 'Finish this thought in one short sentence, then pause for your co-host.')
-                if (heard and tick - since > 3.5 and tick - last_sound > 1.0) or tick - since > 40:
+                if (heard and tick - since > 1.5 and tick - last_sound > 1.25) or tick - since > 40:
                     # Rotate only at a natural handoff, below Hobby's 300s cap.
                     if duration == 210 and elapsed >= 180:
                         stop.set()
@@ -205,10 +211,15 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                     if duration < 210 and duration - elapsed < 15:
                         stop.set()
                         break
+                    if continue_thought(spoken[active], continued, tick - since, bool(pending)):
+                        continued = True
+                        last_sound = tick
+                        await send(active, 'session.commentary.append', 'Finish that unfinished thought briefly, then give your co-host space.')
+                        continue
                     turn += 1
                     await floor(other, wrap=duration < 210 and duration - elapsed < 65)
                     since = last_sound = time.monotonic()
-                    heard = recovered = nudged = False
+                    heard = recovered = nudged = continued = False
                 elif not heard and tick - since > 20:
                     failure = 'A host stayed silent. Both sessions were closed without retrying.'
                     stop.set()
@@ -235,7 +246,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
             if failure:
                 await emit({'type': 'relay-error', 'message': failure})
             await emit({'type': 'relay-closed', 'reason': 'error' if failure else reason,
-                        'finalized': all(closed[i].is_set() for i in range(len(sockets))), 'next_host': 1 - active})
+                        'finalized': all(closed[i].is_set() for i in range(len(sockets))), 'next_host': 1 - active, 'pending_followups': list(pending)})
             for task in tasks:
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
