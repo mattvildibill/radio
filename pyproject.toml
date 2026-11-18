@@ -2,7 +2,7 @@
 name = "radio"
 version = "0.2.0"
 requires-python = ">=3.12,<3.13"
-dependencies = ["fastapi==0.163.2", "uvicorn==0.54.0", "httpx==0.28.1"]
+dependencies = ["fastapi==0.163.2", "uvicorn[standard]==0.54.0", "httpx==0.28.1", "websockets==15.0.1"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
