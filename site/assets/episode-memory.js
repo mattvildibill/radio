@@ -10,5 +10,5 @@ export function episodeMemory(transcripts, events) {
  const opening = render(turns.slice(0,2)).slice(0,2500);
  const recent = render(turns.slice(2)).slice(-10500);
  const requests = events.filter(e=>e.type==='followup-delivered').map(e=>e.text).join('\n').slice(-3000);
- return `Opening context (already covered; do not reintroduce):\n${opening}\nRecent actual discussion (preserve stated views and open questions):\n${recent}\nListener requests already delivered:\n${requests}`;
+ return `Opening context (already covered; do not reintroduce):\n${opening}\nListener requests already delivered (history, not new requests):\n${requests}\nRecent actual discussion in order:\n${recent}\nContinue from the FINAL exchange above. Preserve stated preferences, but do not reopen earlier topics just because they appear in this memory. No new introduction.`;
 }

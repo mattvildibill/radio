@@ -205,3 +205,21 @@ survive a planned segment transition. Delivered does not prove the model answere
 Replays can be renamed and searched by title or original question. New recordings
 include exported transcript/research/usage notes; existing whole-blob recordings
 remain readable after the IndexedDB upgrade. No new hosting or storage service is used.
+
+### Editorial acceptance examples
+
+| Listener prompt | Desired approach | Reject |
+| --- | --- | --- |
+| Best movies ever? | Specific favorites, shared enthusiasm, different criteria and examples | A forced debate or mandatory current-news hook |
+| Recent outages and hacks—should I worry? | Named dated incidents, people affected, primary sources, technical failure versus confirmed intrusion | Generic outage explanations or invented coordination |
+| Why are cities hot at night? | A familiar observation, an understandable mechanism, a concrete example | A list of abstract definitions |
+| EV when I rent without a charger? | A realistic charging routine, costs and missing personal context | Universal advice or irrelevant argument |
+| What if humans could photosynthesize? | A playful hypothetical anchored in biology and clearly marked assumptions | Presenting an imagined scenario as observed fact |
+
+For live acceptance, inspect both received co-host audio transcripts and actual
+on-air output; sending a cue is not proof of a response. Queue two requests before
+a handoff and verify their order and relevance. Across a segment transition, check
+that the show retains early preferences and recent context without another intro.
+Record, stop, rename, search, reload, and play the saved media. Compare the audible
+result separately: text and RMS measurements cannot certify warmth, chemistry or
+absence of every click. Keep real runs bounded and retain final provider usage.

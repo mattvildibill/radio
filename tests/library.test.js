@@ -17,3 +17,13 @@ test('chunk recording survives reopen, rename, notes and removal alongside legac
  const db=await library.database();const t=db.transaction('chunks');const q=t.objectStore('chunks').count();
  await new Promise(resolve=>t.oncomplete=resolve);assert.equal(q.result,0);db.close();await library.remove('old');
 });
+
+test('storage cap rejects the new chunk without overwriting captured audio', async()=>{
+ await library.begin({id:'quota',title:'Quota check',mimeType:'audio/webm'});
+ await library.append('quota',new Blob(['keep']),1);
+ await library.update('quota',{bytes:library.LIMIT});
+ await assert.rejects(library.append('quota',new Blob(['reject']),2),/storage limit/);
+ const record=(await library.list()).find(r=>r.id==='quota');
+ assert.equal(await record.audio.text(),'keep');assert.equal(record.chunkCount,1);assert.equal(record.duration,1);
+ await library.remove('quota');
+});
