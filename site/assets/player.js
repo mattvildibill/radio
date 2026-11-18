@@ -326,6 +326,9 @@ function floor(r, index, turn) {
       ? 'ON AIR. Wrap up naturally: one useful takeaway and one unresolved question. Do not introduce a new topic.'
       : 'ON AIR. You have the floor. Respond to one specific thing you just heard your co-host say, then advance the discussion through your angle. About 15–35 seconds; shorter is welcome. ' + (followup ? 'Address the listener follow-up just added to your context, acknowledging uncertainty where the brief cannot answer it.' : 'You can disagree, ask a genuine question, or follow a worthwhile tangent.');
   send(r.hosts[index], 'session.instructions.append', cue);
+  send(r.hosts[index], 'session.commentary.append', turn === 1
+    ? 'Introduce Mara and Eli as AI hosts, then open our question with one concrete fact from the brief.'
+    : 'Speak now. Respond to your co-host’s last point.' + (followup ? ' Address the listener follow-up.' : remaining < 45 ? ' Wrap up with a useful takeaway.' : ' Advance the discussion.'));
   r.hosts[index].gate?.gain.setTargetAtTime(1, r.context.currentTime, 0.025);
   log('floor', {host: names[index], turn});
   names.forEach((_, i) => {

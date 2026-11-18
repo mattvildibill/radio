@@ -4,6 +4,7 @@ import base64
 import json
 import math
 import time
+import secrets
 from array import array
 from contextlib import AsyncExitStack
 from websockets.asyncio.client import connect
@@ -37,7 +38,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
             stop.set()
 
     async def send(index, kind, content=None):
-        event = {'type': kind}
+        event = {'type': kind, 'event_id': 'radio_' + secrets.token_hex(8)}
         if content is not None:
             event.update(content=content, delegation_id=None)
         await sockets[index].send(json.dumps(event))
@@ -118,8 +119,8 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
             'Respond to what your co-host actually said; advance your angle.')
         await emit({'type': 'floor', 'host': index})
         await send(index, 'session.instructions.append', cue)
-        if opening:
-            await send(index, 'session.commentary.append', 'We are Mara and Eli, your AI hosts. Today we are unpacking the listener’s question together.')
+        await send(index, 'session.commentary.append',
+            'Introduce Mara and Eli as AI hosts, then open our question with one concrete fact from the brief.' if opening else cue)
 
     async with AsyncExitStack() as stack:
         try:
