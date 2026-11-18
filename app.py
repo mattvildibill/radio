@@ -167,6 +167,21 @@ async def openai(path, payload=None, timeout=75):
             raise HTTPException(429, 'OpenAI quota, spend limit, or rate limit reached. The show has stopped; no automatic retries.')
         if response.status_code in (401, 403):
             raise HTTPException(503, 'OpenAI rejected access. Check the Preview key and model permissions.')
+        if response.status_code == 400:
+            # Invalid-request details are necessary to diagnose negotiation. The
+            # exact server credential and credential-like strings are scrubbed;
+            # never echo an SDP offer or its temporary transport credentials.
+            try:
+                error = response.json().get('error') or {}
+                message = str(error.get('message') or 'Invalid request.')
+                message = message.replace(key, '[redacted]')
+                message = re.sub(r'sk-[A-Za-z0-9_-]+', '[redacted]', message)
+                if 'v=0' in message or 'ice-pwd' in message or 'Bearer ' in message:
+                    message = 'The session transport request was rejected; transport credentials are withheld.'
+                message = message[:600]
+            except (ValueError, AttributeError):
+                message = 'Invalid request.'
+            raise HTTPException(502, 'OpenAI rejected the request: ' + message + ' No automatic retry was made.')
         raise HTTPException(502, f'OpenAI could not complete the request ({response.status_code}). No automatic retry was made.')
     return response.json() if response.content else {}
 
@@ -330,7 +345,11 @@ async def session(request: Request):
     index = data.get('host')
     if type(index) is not int or index not in (0, 1):
         raise HTTPException(422, 'Invalid host')
-    sdp = text_field(data, 'sdp', 20000)
+    sdp = data.get('sdp')
+    if not isinstance(sdp, str) or not 1 <= len(sdp) <= 20000 or not sdp.strip():
+        raise HTTPException(422, 'Invalid sdp')
+    # SDP is a wire format. Preserve its terminating CRLF; stripping whitespace
+    # can turn the browser's valid offer into an invalid negotiation request.
     result = await openai('/live/sessions', {'session': host_config(show, index),
                                            'transport': {'type': 'webrtc', 'sdp': sdp}}, timeout=25)
     session_id = result['session']['id']

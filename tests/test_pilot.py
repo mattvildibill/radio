@@ -76,9 +76,11 @@ def test_sessions_use_server_config_and_close_capabilities(client, monkeypatch):
     show = client.post('/api/research', json={'question': 'a real topic'}, headers=ORIGIN).json()
     for i, voice in enumerate(['gleam', 'vesper']):
         upstream.return_value = {'session': {'id': 'live_test_' + str(i)}, 'transport': {'type': 'webrtc', 'sdp': 'answer'}}
-        response = client.post('/api/session', json={'host': i, 'sdp': 'offer', 'ticket': show['ticket'], 'model': 'injected'}, headers=ORIGIN)
+        offer = 'v=0\r\na=sendrecv\r\n'
+        response = client.post('/api/session', json={'host': i, 'sdp': offer, 'ticket': show['ticket'], 'model': 'injected'}, headers=ORIGIN)
         assert response.status_code == 200
         payload = upstream.call_args.args[1]
+        assert payload['transport']['sdp'] == offer
         assert payload['session']['model'] == 'gpt-live-1'
         assert payload['session']['audio']['output']['voice'] == voice
         assert payload['session']['store'] is False and payload['session']['delegation'] == {'type': 'client'}
