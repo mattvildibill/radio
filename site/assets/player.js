@@ -2,7 +2,7 @@ import {episodeMemory} from './episode-memory.js';
 import {AudioTimeline} from './audio-timeline.js';
 import {duration, ago, safeSource} from './controller.js';
 import * as library from './library.js';
-import {PILOT_QUESTION, PILOT_FOLLOWUP, REPORT_KEY, assessPilot} from './verification.js';
+import {PILOT_QUESTION, PILOT_FOLLOWUP, REPORT_KEY, assessPilot, conversationMetrics} from './verification.js';
 const $ = id => document.getElementById(id);
 const names = ['Mara', 'Eli'];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
@@ -24,6 +24,10 @@ function renderPilot() {
     li.textContent = `${check.passed ? 'Verified' : 'Not verified'}: ${check.label}`;
     $('pilot-results').append(li);
   }
+  const pacing = conversationMetrics(pilotReport);
+  const pacingItem = document.createElement('li');
+  pacingItem.textContent = pacing.secondHostSeconds === null ? 'Pacing: insufficient audio evidence.' : `Pacing: second host after ${pacing.secondHostSeconds}s (target ≤12s); ${pacing.firstMinuteContributions} contributions in the first minute. Timing is not a listening-quality score.`;
+  $('pilot-results').append(pacingItem);
   $('pilot-status').textContent = pilotReport.error || 'Pilot evidence saved. Listen to judge the voices, handoffs, and whether the hospital follow-up changed the conversation. These judgments are not automatically marked as passed.';
   $('pilot-reload').hidden = !pilotReport.recordingId || loadedPilot;
   $('pilot-download').hidden = false;
@@ -95,7 +99,7 @@ function renderResearch() {
   sourceList($('sources'), show.sources);
 }
 function renderUsage() {
-  const usage = {research: show?.research_usage || notes.research_failure?.usage || null, research_failure: notes.research_failure || null, web_search_calls: show?.search_calls || notes.research_failure?.search_calls || 0,
+  const usage = {conversation_pacing: conversationMetrics(notes), research: show?.research_usage || notes.research_failure?.usage || null, research_failure: notes.research_failure || null, web_search_calls: show?.search_calls || notes.research_failure?.search_calls || 0,
     voice: notes.usage.map((u, i) => ({host: names[i], ...u}))};
   $('usage').textContent = JSON.stringify(usage, null, 2);
 }
@@ -194,6 +198,8 @@ async function relaySegment(r, firstHost = 0) {
       names.forEach((_, i) => { $('host-' + i).classList.toggle('speaking', i === event.host); $('host-' + i).querySelector('.host-state').textContent = i === event.host ? 'On air' : 'Listening'; });
     } else if (event.type === 'audio' && !r.stopping) {
       playRelayAudio(r, event.pcm);
+    } else if (event.type === 'speech-started' || event.type === 'turn-ended') {
+      log(event.type, {host:names[event.host], turn:event.turn, elapsed:event.elapsed, seconds:event.seconds, forced:event.forced, segment:r.segment});
     } else if (event.type === 'meter') {
       const rms = [0, 0]; rms[event.host] = event.rms; log('audio-level', {rms, floor:event.host});
     } else if (event.type === 'followup-accepted' || event.type === 'followup-rejected') {

@@ -265,3 +265,11 @@ def test_handoff_allows_an_unfinished_phrase_more_breathing_room():
     from editorial import handoff_pause
     assert handoff_pause("I'm curious") > handoff_pause('What do you think?')
     assert handoff_pause('For example...') > handoff_pause('That lands beautifully.')
+
+
+def test_regular_microphone_cues_do_not_schedule_conversation_content():
+    from editorial import floor_cue
+    assert floor_cue(3) == floor_cue(4) == floor_cue(9)
+    assert floor_cue(1, opening=True) != floor_cue(2, introduction=True)
+    assert floor_cue(3, followup=True) != floor_cue(3)
+    assert floor_cue(3, wrap=True) != floor_cue(3)

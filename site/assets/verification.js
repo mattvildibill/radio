@@ -21,3 +21,25 @@ export function assessPilot(report) {
   ];
   return checks.map(([label, passed]) => ({label, passed}));
 }
+
+// Measure actual audio, separately from transport success or subjective quality.
+export function conversationMetrics(report) {
+  const events = report.events || [];
+  let sounds = events.filter(e => e.type === 'speech-started');
+  if (!sounds.length) {
+    // Older reports only sampled RMS once per second.
+    let previous = null;
+    sounds = events.filter(e => {
+      if (e.type !== 'audio-level' || !(e.rms?.[e.floor] > 0.009)) return false;
+      if (e.floor === previous) return false;
+      previous = e.floor; return true;
+    }).map(e => ({...e, host:e.floor}));
+  }
+  const first = sounds[0], second = sounds.find(e => e.host !== first?.host);
+  const seconds = (a,b) => (new Date(a.at)-new Date(b.at))/1000;
+  return {
+    secondHostSeconds: first && second ? Math.round(seconds(second,first)*10)/10 : null,
+    firstMinuteContributions: first ? sounds.filter(e => seconds(e,first) < 60).length : 0,
+    forcedHandoffs: events.filter(e=>e.type==='turn-ended' && e.forced).length,
+  };
+}

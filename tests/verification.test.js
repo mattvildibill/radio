@@ -30,3 +30,15 @@ test('media evidence stays separate from post-reload persistence and semantic re
   report.usage[1].final = false;
   assert.equal(assessPilot(report)[4].passed, false);
 });
+
+test('successful audio transport cannot conceal a forty-second opening monologue', async () => {
+ const {conversationMetrics} = await import('../site/assets/verification.js');
+ const at = s => new Date(Date.UTC(2026,10,19,0,0,s)).toISOString();
+ const report={events:[{type:'speech-started',host:'Mara',at:at(0)}, {type:'speech-started',host:'Eli',at:at(40)}]};
+ assert.equal(conversationMetrics(report).secondHostSeconds,40);
+ assert.equal(conversationMetrics(report).firstMinuteContributions,2);
+ report.events.splice(1,0,{type:'speech-started',host:'Eli',at:at(8)},{type:'speech-started',host:'Mara',at:at(17)});
+ assert.equal(conversationMetrics(report).secondHostSeconds,8);
+ assert.equal(conversationMetrics(report).firstMinuteContributions,4);
+ assert.equal(conversationMetrics({}).secondHostSeconds,null);
+});

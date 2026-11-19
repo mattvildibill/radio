@@ -174,9 +174,9 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
             for i in range(2):
                 await send(i, 'session.thinking.append', json.dumps({'listener_followup': followup['text']}))
             await emit({'type': 'followup-delivered', **followup, 'host': index})
-        cue = floor_cue(turn, opening, bool(followup), wrap)
+        cue = floor_cue(turn, opening, bool(followup), wrap, introduction=first and turn == 2 and not followup)
         await emit({'type': 'floor', 'host': index})
-        await send(index, 'session.instructions.append', 'ON AIR. You have the floor. Respond naturally; you do not need a counterargument.')
+        await send(index, 'session.instructions.append', 'ON AIR. Your microphone is open.')
         await send(index, 'session.commentary.append', cue)
 
     async with AsyncExitStack() as stack:
@@ -224,6 +224,8 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 frame = values.tobytes()
                 rms = math.sqrt(sum(v * v for v in values) / len(values)) / 32768
                 if rms > 0.009:
+                    if not heard:
+                        await emit({'type':'speech-started', 'host':active, 'turn':turn, 'elapsed':round(elapsed,3)})
                     last_sound, heard = tick, True
                 other = 1 - active
                 await asyncio.gather(*(sockets[i].send(json.dumps({'type': 'session.input_audio.append',
@@ -233,10 +235,12 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                 if int(elapsed) != last_meter:
                     last_meter = int(elapsed)
                     await emit({'type': 'meter', 'host': active, 'rms': round(rms, 4)})
-                if heard and tick - since > 28 and not nudged:
+                if heard and tick - since > (6 if first and turn == 1 else 22) and not nudged:
                     nudged = True
-                    await send(active, 'session.instructions.append', 'Finish this thought in one short sentence, then pause for your co-host.')
-                if (heard and tick - since > 1.5 and tick - last_sound > handoff_pause(spoken[active]) and not queued_speech(buffers[active])) or tick - since > 40:
+                    await send(active, 'session.thinking.append', 'Producer timing note: leave room for your co-host after this thought; do not start another topic yet.')
+                if (heard and tick - since > 1.5 and tick - last_sound > handoff_pause(spoken[active]) and not queued_speech(buffers[active])) or tick - since > (15 if first and turn == 1 else 40):
+                    await emit({'type':'turn-ended', 'host':active, 'turn':turn, 'seconds':round(tick-since,3),
+                                'forced':tick-since > (15 if first and turn == 1 else 40)})
                     # Rotate only at a natural handoff, below Hobby's 300s cap.
                     if duration == 210 and elapsed >= 180:
                         stop.set()
