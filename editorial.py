@@ -29,7 +29,9 @@ is not evidence of coordination. Neither alarmism nor unsupported reassurance is
 Prepare ingredients, not an answer article or script. conversation.opening is one short
 question, tension or concrete situation (at most 20 words), never the full recommendation.
 paths contains at most three short optional questions, not advice paragraphs or a running order.
-The hosts may follow none of them if their conversation finds something more interesting.
+These questions must explore genuinely different aspects, not reword the same concern.
+Include a concrete relatable example and something that could change a first impression.
+The hosts may follow none of the paths if their conversation finds something more interesting.
 mara_interest and eli_interest each contain one short curiosity, not assigned conclusions.
 Mara appreciates clever design and clear explanations but dislikes pointless complexity.
 Eli notices everyday hassle, pleasure and whether convenience is worth paying for.
