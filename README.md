@@ -61,7 +61,7 @@ single-use admission control. No Vercel protection settings are changed by code.
 ## Live show and cost controls
 
 - Responses: `gpt-5.6-luna`, web search, at most three tool calls, 6,000 output
-  tokens shared by reasoning and the final brief, low reasoning, a 1,000-word editorial brief,
+  tokens shared by reasoning and the final brief, low reasoning, a compact editorial brief (target under 650 words),
   no stored response. Sources come from actual search
   actions/citations; no sourced brief means no host sessions.
 - GPT-Live: `gpt-live-1`, `store: false`, client delegation. No paid backend
@@ -77,8 +77,10 @@ single-use admission control. No Vercel protection settings are changed by code.
   The player uses one verified relay path. The experimental WebRTC player was
   removed so conversation rules no longer diverge between transports.
 - The controller assigns the floor, routes only on-air audio to the listener and
-  co-host, and waits for measured media silence before handoff. A finish-your-thought cue at 28 seconds and a 40-second floor
-  cap bound monologues. Short `session.commentary.append` cues actually trigger
+  co-host, and waits for measured media silence before handoff. An opening-only 15-second emergency cap prevents one host owning the introduction.
+  Later turns retain a 40-second safety cap for occasional longer stories. Gentle
+  timing notes use context, not mid-speech instruction replacement; these are
+  safeguards, not the desired duration of every turn. Short `session.commentary.append` cues actually trigger
   speech; instruction changes alone do not guarantee a greeting. One silence cue is allowed, then the show stops; it never
   retries failed paid sessions. Planned relay continuations require confirmed
   closure of the previous pair; they are not error recovery.
@@ -194,7 +196,12 @@ optional threads, and separate host interests. Mara notices craft and mechanisms
 Eli follows emotional impact and unexpected connections. Neither is assigned an
 opposing conclusion. Agreement, questions and changed minds are welcome.
 
-Floor cues vary; contributions may be short reactions or fuller thoughts. An
+Regular floor cues only grant the microphone: no rotating reaction/question/example
+assignments. Hosts choose their next contribution from the actual conversation.
+Most contributions should be a sentence or two, with natural variation; interesting
+stories may take longer. Both hosts introduce themselves, with an opening target
+of the second host audible within 12 seconds of the first. This target is measured
+separately from the transport checks and is not a guarantee of subjective quality. An
 explicitly unfinished thought can get one continuation, unless a listener is
 waiting. Silence-based handoffs remain sequential: overlap is intentionally deferred.
 Across relay segments, bounded memory preserves the opening, recent actual spoken
@@ -223,3 +230,14 @@ that the show retains early preferences and recent context without another intro
 Record, stop, rename, search, reload, and play the saved media. Compare the audible
 result separately: text and RMS measurements cannot certify warmth, chemistry or
 absence of every click. Keep real runs bounded and retain final provider usage.
+
+The producer's opening is a question or situation of at most 20 words, not an
+answer paragraph. Optional paths are at most three short questions (500 characters),
+not a running order. Stable host preferences remain distinct from per-episode
+curiosities. Facts stay in shared evidence cards. No extra scriptwriting, critic,
+director or research agents run during a show.
+
+`conversationMetrics` reports actual second-host entrance, first-minute contributions
+and forced handoffs. The unused browser FloorController and its timing tests were
+removed: the Python relay is the only live microphone controller. The retained
+formatting/source utilities remain in controller.js for import compatibility.

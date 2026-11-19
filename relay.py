@@ -239,8 +239,11 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                     nudged = True
                     await send(active, 'session.thinking.append', 'Producer timing note: leave room for your co-host after this thought; do not start another topic yet.')
                 if (heard and tick - since > 1.5 and tick - last_sound > handoff_pause(spoken[active]) and not queued_speech(buffers[active])) or tick - since > (15 if first and turn == 1 else 40):
-                    await emit({'type':'turn-ended', 'host':active, 'turn':turn, 'seconds':round(tick-since,3),
-                                'forced':tick-since > (15 if first and turn == 1 else 40)})
+                    can_continue = (not (first and turn == 1) and continue_thought(spoken[active], continued, tick-since, bool(pending)))
+                    ending_segment = (duration == 210 and elapsed >= 180) or (duration < 210 and duration-elapsed < 15)
+                    if not can_continue or ending_segment:
+                        await emit({'type':'turn-ended', 'host':active, 'turn':turn, 'seconds':round(tick-since,3),
+                                    'forced':tick-since > (15 if first and turn == 1 else 40)})
                     # Rotate only at a natural handoff, below Hobby's 300s cap.
                     if duration == 210 and elapsed >= 180:
                         stop.set()
@@ -248,7 +251,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                     if duration < 210 and duration - elapsed < 15:
                         stop.set()
                         break
-                    if continue_thought(spoken[active], continued, tick - since, bool(pending)):
+                    if can_continue:
                         continued = True
                         last_sound = tick
                         await send(active, 'session.commentary.append', 'Finish that unfinished thought briefly, then give your co-host space.')
