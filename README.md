@@ -192,8 +192,9 @@ The producer selects taste, news, explainer, advice, speculation, or mixed based
 on listener intent. Taste episodes explore specific works and different criteria;
 news episodes require named dated events, affected people and explicit unknowns.
 The structured brief includes source-linked claims, limitations, an opening idea,
-optional threads, and separate host interests. Mara notices craft and mechanisms;
-Eli follows emotional impact and unexpected connections. Neither is assigned an
+optional threads, and separate host interests. Mara appreciates clever design and
+clear explanations but dislikes pointless complexity; Eli notices everyday hassle,
+pleasure and whether convenience is worth paying for. Neither is assigned an
 opposing conclusion. Agreement, questions and changed minds are welcome.
 
 Regular floor cues only grant the microphone: no rotating reaction/question/example

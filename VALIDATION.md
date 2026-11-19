@@ -280,3 +280,85 @@ Final code review also distinguished queued silence from queued speech: silent
 frames cannot hold the floor until its hard cap, while pending speech must drain.
 A regression test covers silence followed by speech. This small final relay change
 was unit-verified; the real final gate audition above used c7f3405.
+
+## November 18 evening: broad conversational framing
+
+Following the owner's EV feedback and the agent review, replaced rotating turn
+assignments with a neutral microphone cue. The producer now prepares a brief
+opening question/situation and three optional questions rather than an advice
+article. Shared live instructions are shorter, and stable host preferences are
+separate from per-episode curiosities. Each host introduces only themselves.
+An opening-only safeguard and measured timing replace the previous assumption
+that two audible voices demonstrate conversational pacing. Normal turns retain
+room for longer thoughts and do not follow a scripted reaction/question/example
+cycle. The unused browser FloorController and its obsolete timing tests were
+removed; no new runtime agents or services were added.
+
+Three real private-Preview auditions on November 18 evening used the actual
+research endpoint and paired Live audio relay. These were API/media tests, not
+browser listening tests. Timing is based on server-detected outgoing speech
+before browser playback buffering:
+
+| Question | Second host after first speech | First-minute contributions | Forced handoffs | Final provider seconds |
+| --- | ---: | ---: | ---: | ---: |
+| Should I buy an electric car? | 10.97 s | 5 | 0 | 82 + 82 |
+| Best movies ever? | 11.49 s | 4 | 0 | 83 + 83 |
+| Recent outages and hacks? | 11.49 s | 3 | 0 | 80 + 80 |
+
+All three received a typed follow-up at roughly 30 seconds, delivered it, and
+closed both sessions normally. The EV follow-up changed the circumstances to a
+renter with workplace charging; the hosts discussed reliability and backup days.
+The movie follow-up moved the conversation toward comedy and Some Like It Hot.
+The news follow-up distinguished reported technical outages from confirmed
+attacks rather than inventing coordination. The news discussion referenced
+Microsoft, the flight disruption and NSA maintenance in its first minute.
+
+The cadence varied: EV floor intervals ranged about 10.5–17 seconds; movies
+11–29 seconds; news 11–25 seconds. The hosts were not cut to a uniform duration.
+The retained prior short pilot had about 40 seconds between first audible host
+outputs, so the entrance measurements show a substantial improvement. These
+observations do not certify subjective chemistry or eliminate all disfluency.
+
+These three research calls used 43,866 total tokens and three searches. Final
+voice usage was 490 session-seconds (about $0.41 at the documented rate), plus
+research/search costs. No quota or spend errors were retried.
+
+Local checks: 48 Python tests, 10 JavaScript tests, JavaScript syntax, and the
+locked Python dependency check pass. Test counts decreased because five tests
+exercised the deleted, inactive browser controller. New regression checks ensure
+regular microphone cues do not cycle through content assignments and an otherwise
+successful 40-second entrance remains visible in the pacing measurements.
+
+Full-length runtime regression on f255be4 completed in 544.7 seconds including
+setup/closure, with 25 audible contributions across three session pairs. All six
+provider sessions confirmed closure; both queued follow-ups were delivered. Final
+provider usage totaled 1,012 session-seconds (about $0.84 voice). Its research used
+14,795 tokens and one search. Eli's entrance was 15.37 seconds after Mara in this
+run and the opening safety cap activated once; the 12-second audition goal is
+therefore a target, not a universal guarantee. Later handoffs were not forced.
+
+The full transcript also exposed recurring advice about convenience and repeated
+questions to an imagined listener. This was not counted as an editorial success.
+A subsequent compact framing change explicitly asks the hosts to discuss the
+listener's question with each other, answer each other's questions, compare
+plausible circumstances when personal context is missing, and leave settled points
+behind. Producer paths must cover different aspects rather than rephrase one
+concern. No turn-specific content recipe or extra runtime model was introduced.
+The final short audition below checks that adjustment; the full-length runtime
+regression predates this small editorial change.
+
+The final 120-second EV audition on 335ede9 brought Eli in after 11.21 seconds,
+with four first-minute contributions and no forced handoffs. Seven contributions
+were captured, the workplace-charging follow-up was delivered, and both sessions
+confirmed closure. Mara answered Eli's hypothetical hectic-week question with her
+own view rather than asking the absent listener again. This supports the direction
+of the co-host framing, not a claim that every long episode will avoid repetition.
+
+Final review also shortened the closing-cue window from 65 to 30 seconds: a short
+audition should not spend most of its second half repeatedly wrapping up. The
+hard show limit and session-cleanup paths are unchanged. That small timing change
+was checked locally; the retained real auditions precede it.
+
+Retained usage for this implementation pass totals 1728 provider-session seconds
+(approximately $1.44 voice), 73,317 research tokens, and five searches.
+Research/search charges are separate; these figures are not an account balance.

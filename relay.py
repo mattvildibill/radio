@@ -257,7 +257,7 @@ async def run_relay(browser, configs, key, duration, history='', first=True, fir
                         await send(active, 'session.commentary.append', 'Finish that unfinished thought briefly, then give your co-host space.')
                         continue
                     turn += 1
-                    await floor(other, wrap=duration < 210 and duration - elapsed < 65)
+                    await floor(other, wrap=duration < 210 and duration - elapsed < 30)
                     since = last_sound = next_frame = time.monotonic()
                     heard = recovered = nudged = continued = False
                 elif not heard and tick - since > 20:
