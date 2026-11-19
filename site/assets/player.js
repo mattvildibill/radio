@@ -1,3 +1,4 @@
+import {preferPlayback, enableAudio, audioInterrupted} from './audio-start.js';
 import {episodeMemory} from './episode-memory.js';
 import {AudioTimeline} from './audio-timeline.js';
 import {duration, ago, safeSource} from './controller.js';
@@ -6,6 +7,7 @@ import {PILOT_QUESTION, PILOT_FOLLOWUP, REPORT_KEY, assessPilot, conversationMet
 const $ = id => document.getElementById(id);
 const names = ['Mara', 'Eli'];
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+let testingSound = false;
 let show = null, run = null, recording = null, urls = [];
 let notes = {events: [], transcripts: [], usage: [null, null]};
 let lastTranscript = null;
@@ -176,6 +178,7 @@ async function relaySegment(r, firstHost = 0) {
     } else if (event.type === 'ready') {
       clearTimeout(setupTimer);
       if (r.stopping) { ws.send(JSON.stringify({type:'stop'})); return; }
+      if (r.context.state !== 'running') { r.error = 'Your browser interrupted audio before playback. Both hosts are closing. Use Test sound before trying again.'; fail(r.error); await stopShow(r.error); return; }
       if (!r.started) {
         r.started = Date.now(); r.controller = {active: -1, stop() { this.active = -1; }};
         if (r.pilot) {
@@ -188,7 +191,7 @@ async function relaySegment(r, firstHost = 0) {
         $('record').disabled = !window.MediaRecorder; $('followup').disabled = false; $('send').disabled = false;
         r.interval = setInterval(() => { $('clock').textContent = duration((Date.now() - r.started) / 1000) + ' / ' + duration(r.limit); }, 250);
         r.timeout = setTimeout(() => void stopShow('The show has finished.'), r.limit * 1000);
-        r.context.onstatechange = () => { if (r.context.state === 'suspended' && !r.stopping) void stopShow('Audio was suspended. Both sessions are closing.'); };
+
       }
       ws.send(JSON.stringify({type:'go'}));
       for (const item of r.followups || []) if (item.status === 'waiting') { ws.send(JSON.stringify({type:'followup', id:item.id, text:item.text})); item.status = 'sent'; }
@@ -251,24 +254,45 @@ function queueRelayFollowup(r, text) {
   if (r.relay?.readyState === WebSocket.OPEN) { r.relay.send(JSON.stringify({type:'followup', id:item.id, text})); item.status = 'sent'; }
   renderFollowups(r);
 }
+async function requireAudio(r) {
+  while (!r.stopping && r.context.state !== 'running') {
+    setStatus('Tap to enable sound before the show starts.');
+    $('audio-status').textContent = 'Your browser paused audio. No host sessions will open until sound is enabled.';
+    $('enable-audio').hidden = false;
+    const enabled = await new Promise(resolve => { r.audioWait = resolve; });
+    r.audioWait = null; $('enable-audio').hidden = true;
+    if (!enabled) return false;
+  }
+  return !r.stopping;
+}
 async function startShow(event, pilot = false) {
-  event.preventDefault(); if (run) return;
+  event.preventDefault(); if (run || testingSound) return;
   document.querySelectorAll('.replay audio').forEach(audio => audio.pause());
   $('error').textContent = ''; $('recording-status').textContent = '';
   if (!window.WebSocket || !window.AudioContext || !window.isSecureContext) {
     fail('This browser needs secure audio streaming and Web Audio on HTTPS. Try current Chrome or Safari.'); return;
   }
-  const context = new AudioContext(); await context.resume();
+  preferPlayback();
+  let context;
+  try { context = new AudioContext(); } catch (error) { fail(error); return; }
   const r = {context,
     stopping: false, limit: pilot ? 90 : 540, pilot, abort: new AbortController(), started: null};
   run = r; show = null; notes = {events: [], transcripts: [], usage: [null, null]}; lastTranscript = null;
   $('followup-queue').replaceChildren(); $('transcript').replaceChildren(); $('start').disabled = true; $('run-pilot').disabled = true; $('stop').disabled = false; $('question').disabled = true;
   $('clock').textContent = '00:00 / ' + duration(r.limit);
   $('research').hidden = true; setStatus('The producer is researching…'); log('research-started');
-  r.mix = context.createDynamicsCompressor(); r.mix.threshold.value = -15; r.mix.ratio.value = 4;
-  r.master = context.createGain(); r.master.gain.value = Number($('volume').value);
-  r.capture = context.createMediaStreamDestination(); r.mix.connect(r.master); r.master.connect(context.destination); r.mix.connect(r.capture);
   try {
+    r.mix = context.createDynamicsCompressor(); r.mix.threshold.value = -15; r.mix.ratio.value = 4;
+    r.master = context.createGain(); r.master.gain.value = Number($('volume').value);
+    r.capture = context.createMediaStreamDestination(); r.mix.connect(r.master); r.master.connect(context.destination); r.mix.connect(r.capture);
+    r.context.onstatechange = () => {
+      log('audio-state', {state:r.context.state});
+      if ((r.started || r.relay) && !r.stopping && audioInterrupted(r.context.state)) void stopShow('Audio was interrupted. Both sessions are closing. Keep the page visible and use Test sound before trying again.');
+    };
+    $('test-sound').disabled = true;
+    // resume() is invoked inside the initiating gesture, before network waits.
+    await enableAudio(context);
+    if (!await requireAudio(r)) return;
     setStatus('Preparing studio audio…');
     log('audio-transport', {mode: 'relay'});
     await checkRelay();
@@ -277,6 +301,7 @@ async function startShow(event, pilot = false) {
     show = await api('/api/research', {question: $('question').value.trim()}, {signal: r.abort.signal});
     if (r.stopping) return;
     log('research-completed', {researched_at: show.researched_at, sources: show.sources.length}); renderResearch(); renderUsage();
+    if (!await requireAudio(r)) return;
     setStatus('Brief ready. Connecting Mara and Eli…');
     await relaySegment(r);
   } catch (error) {
@@ -285,17 +310,19 @@ async function startShow(event, pilot = false) {
 }
 async function stopShow(message = 'The show has ended.') {
   const r = run; if (!r || r.stopping) return;
-  r.stopping = true; r.abort.abort(); r.controller?.stop(); clearInterval(r.interval); clearTimeout(r.timeout); clearTimeout(r.followupTimer);
+  r.stopping = true; r.audioWait?.(false); $('enable-audio').hidden = true; r.abort.abort(); r.controller?.stop(); clearInterval(r.interval); clearTimeout(r.timeout); clearTimeout(r.followupTimer);
   $('stop').disabled = true; $('record').disabled = true; $('send').disabled = true; $('followup').disabled = true;
   setStatus('Closing both host sessions…'); $('signal').classList.remove('live');
   const saved = stopRecording();
-  r.master.gain.value = 0;
+  if (r.master) r.master.gain.value = 0;
   if (r.relay) {
     if (r.relay.readyState === WebSocket.OPEN) r.relay.send(JSON.stringify({type:'stop'}));
     await Promise.race([r.relayClosed, sleep(10000)]);
     r.relay.close();
   }
-  r.capture.stream.getTracks().forEach(t => t.stop()); await r.context.close(); await saved;
+  r.capture?.stream.getTracks().forEach(t => t.stop());
+  if (r.context.state !== 'closed') await r.context.close();
+  await saved;
   log('show-ended', {audioUnderruns: r.audioTimeline?.underruns || 0}); renderUsage();
   for (const id of r.recordingIds || []) { try { await library.update(id, {notes:safeNotes()}); } catch (error) { fail(error); } }
   await renderLibrary();
@@ -309,7 +336,7 @@ async function stopShow(message = 'The show has ended.') {
       error: r.error || (message === 'The show has finished.' ? null : message), replay: {}};
     loadedPilot = false; savePilotReport(); $('pilot-check').open = true;
   }
-  run = null; $('start').disabled = false; $('run-pilot').disabled = false; $('question').disabled = false;
+  run = null; $('test-sound').disabled = false; $('start').disabled = false; $('run-pilot').disabled = false; $('question').disabled = false;
 }
 function blobLink(blob, filename, title, collection = urls) {
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); collection.push(a.href);
@@ -442,6 +469,36 @@ $('run-pilot').onclick = event => {
 $('pilot-reload').onclick = () => { if (!run) location.reload(); };
 $('pilot-download').onclick = () => {
   if (pilotReport) blobLink(new Blob([JSON.stringify({...pilotReport, checks: assessPilot(pilotReport)}, null, 2)], {type: 'application/json'}), 'radio-pilot-report.json', 'Download').click();
+};
+$('enable-audio').onclick = async () => {
+  const r = run; if (!r || r.stopping) return;
+  preferPlayback();
+  const enabled = await enableAudio(r.context);
+  if (enabled && run === r && !r.stopping) { $('audio-status').textContent = 'Audio enabled.'; r.audioWait?.(true); }
+  else $('audio-status').textContent = 'Audio is still blocked. Open the Preview directly in Safari or Chrome, keep it visible, and check media volume and audio output.';
+};
+$('test-sound').onclick = async () => {
+  if (run || testingSound) return;
+  testingSound = true;
+  const button = $('test-sound'); button.disabled = true;
+  $('start').disabled = true; $('run-pilot').disabled = true;
+  let context;
+  try {
+    preferPlayback(); context = new AudioContext();
+    if (!await enableAudio(context)) throw new Error('The browser blocked audio playback. Open this page directly in Safari or Chrome and try again.');
+    const tone = context.createOscillator(), level = context.createGain();
+    tone.frequency.value = 440; level.gain.setValueAtTime(0,context.currentTime);
+    level.gain.linearRampToValueAtTime(0.12,context.currentTime+0.03);
+    level.gain.linearRampToValueAtTime(0,context.currentTime+0.3);
+    tone.connect(level); level.connect(context.destination); tone.start(); tone.stop(context.currentTime+0.32);
+    $('audio-status').textContent = 'Playing a short tone. If you cannot hear it, check media volume, Silent mode, and Bluetooth/AirPlay output. No API calls were made.';
+    await Promise.race([new Promise(resolve => { tone.onended = resolve; }), sleep(1000)]);
+  } catch (error) { $('audio-status').textContent = error.message; }
+  finally {
+    if (context && context.state !== 'closed') await context.close();
+    testingSound = false; button.disabled = Boolean(run);
+    $('start').disabled = Boolean(run); $('run-pilot').disabled = Boolean(run);
+  }
 };
 $('stop').onclick = () => void stopShow();
 $('record').onclick = () => void toggleRecording();

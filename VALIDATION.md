@@ -362,3 +362,21 @@ was checked locally; the retained real auditions precede it.
 Retained usage for this implementation pass totals 1728 provider-session seconds
 (approximately $1.44 voice), 73,317 research tokens, and five searches.
 Research/search charges are separate; these figures are not an account balance.
+
+
+## Mobile audio recovery — November 19, 2026
+
+The browser now checks actual AudioContext state before research and again before
+opening host sessions, provides a fresh user-gesture button when audio is blocked,
+handles both suspended and interrupted live audio by stopping sessions, and requests
+the optional playback audio category. A free sound-test tone helps isolate device
+output/volume issues without research or voice calls. The show still stops when the
+page is hidden; phone background/lock-screen playback is not supported.
+
+Validation: 48 Python tests and 13 JavaScript tests pass. The isolated Chromium
+check (`.venv/bin/python tests/mobile_audio_browser.py`) passes five checks: the test
+tone closes its context; simulated interruption during research opens no hosts;
+a fresh tap resumes and starts mocked hosts; a live interruption sends stop and
+closes the context; Stop while awaiting audio opens no hosts. Research and host
+responses are mocked; no OpenAI API calls were made. Physical iOS/Android audio
+output is not verified, and the user's specific phone/browser remains unknown.
