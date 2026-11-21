@@ -1,131 +1,447 @@
+"""Private radio Preview pilot. OpenAI is called directly, only from this server."""
+import base64
+import hashlib
 import hmac
+import json
 import os
+import re
+import secrets
 import time
+from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import FastAPI, Request, HTTPException
-from fastapi.responses import FileResponse, JSONResponse
+from urllib.parse import urlparse, parse_qsl, urlencode
+
+from editorial import PLAN_SCHEMA, EVIDENCE_SCHEMA, PRODUCER
+import httpx
+from fastapi import FastAPI, HTTPException, Request, WebSocket
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select, insert, func
-from sqlalchemy.exc import IntegrityError
-from station import database as db
-from station.editorial import BlueDraft
-from station.publisher import blockers, publish
-from station.providers import Gemini, Blob
 
-app = FastAPI(title='Radio', docs_url=None, redoc_url=None)
 ROOT = Path(__file__).parent
-engine = db.engine_for()
-EVERGREEN = {'id': 'interlude-v1', 'title': 'Room to think', 'duration': 60,
-             'audio_url': '/assets/interlude.mp3', 'kind': 'evergreen',
-             'description': 'Original instrumental interlude. Evergreen audio, not a news edition.'}
+app = FastAPI(title='Ask the Hosts', docs_url=None, redoc_url=None, openapi_url=None)
+API = 'https://api.openai.com/v1'
+PREVIEW_HOST = 'radio-git-codex-ask-the-hosts-pilot-mattvildibills-projects.vercel.app'
+HOSTS = [
+    {'name': 'Mara', 'voice': 'gleam', 'angle': 'mara_angle',
+     'character': 'Warm and quietly funny. Clever design and a clear explanation delight you; needless complexity irritates you. You have preferences, but a good concrete example can change your mind.'},
+    {'name': 'Eli', 'voice': 'vesper', 'angle': 'eli_angle',
+     'character': 'Wry and curious. You notice everyday hassle, pleasure, and whether convenience is worth paying for. You enjoy unexpected connections and finding out why your co-host loves something. You can be enthusiastic or skeptical, never automatically either.'},
+]
 
-def authorize(request, name):
-    secret = os.getenv(name, '')
-    if not secret or not hmac.compare_digest(request.headers.get('authorization', ''), 'Bearer ' + secret):
-        raise HTTPException(401, 'Authentication required')
+
+def secret():
+    value = os.getenv('OPENAI_API_KEY', '')
+    if not value:
+        raise HTTPException(503, 'OPENAI_API_KEY is not configured in radio Preview.')
+    # Domain separation: the server API key never leaves the server. Derive a
+    # separate key for short-lived app capabilities; do not use it as a password.
+    return hmac.new(value.encode(), b'radio-pilot-capabilities-v1', hashlib.sha256).digest()
+
+
+def sign(data, kind, seconds):
+    payload = dict(data, kind=kind, exp=int(time.time()) + seconds)
+    body = base64.urlsafe_b64encode(json.dumps(payload, separators=(',', ':')).encode()).decode().rstrip('=')
+    digest = hmac.new(secret(), body.encode(), hashlib.sha256).hexdigest()
+    return body + '.' + digest
+
+
+def verify(token, kind):
+    try:
+        body, digest = token.split('.')
+        if not hmac.compare_digest(digest, hmac.new(secret(), body.encode(), hashlib.sha256).hexdigest()):
+            raise ValueError()
+        data = json.loads(base64.urlsafe_b64decode(body + '=' * (-len(body) % 4)))
+        if data['kind'] != kind or data['exp'] <= time.time():
+            raise ValueError()
+        return data
+    except (ValueError, KeyError, TypeError):
+        raise HTTPException(401, 'Private browser session or show ticket expired. Reload the studio and research again.')
+
+
+def authorize(request):
+    return verify(request.cookies.get('radio_pilot', ''), 'access')
+
+
+def preview_only():
+    if os.getenv('VERCEL_ENV') != 'preview' or os.getenv('VERCEL') != '1':
+        raise HTTPException(403, 'This pilot runs only on its protected Vercel Preview.')
+
+
+async def protected_preview(request):
+    """Verify the exact radio branch alias still enforces Vercel Authentication.
+
+    Vercel authenticates the incoming request before it reaches this app. A
+    second, credential-free request must be stopped at that same outer gate.
+    The probe never follows redirects, accepts client destinations, or carries
+    cookies/credentials. If protection is disabled, this app's probe returns 204
+    and admission fails closed. Check before every new billable operation.
+    """
+    preview_only()
+    if request.headers.get('host') != PREVIEW_HOST:
+        raise HTTPException(403, 'Open the stable radio branch Preview link to use this pilot.')
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=False) as client:
+            probe = await client.get('https://' + PREVIEW_HOST + '/api/privacy-probe',
+                                    params={'nonce': secrets.token_hex(8)},
+                                    headers={'Cache-Control': 'no-cache'})
+    except httpx.HTTPError:
+        raise HTTPException(503, 'Could not verify private Preview protection. No show was started.')
+    target = urlparse(probe.headers.get('location', ''))
+    if not (probe.status_code == 302 and target.scheme == 'https'
+            and target.hostname == 'vercel.com' and target.path == '/sso-api'):
+        raise HTTPException(503, 'Private Preview protection is not confirmed. Show starts are disabled.')
+
+
+def same_origin(request):
+    origin = request.headers.get('origin')
+    # Host is set by the ingress. Do not trust arbitrary forwarded-origin headers.
+    if not origin or urlparse(origin).netloc != request.headers.get('host') or urlparse(origin).scheme not in ('http', 'https'):
+        raise HTTPException(403, 'Same-origin request required')
+
+
+async def body(request, limit=48000):
+    chunks = bytearray()
+    async for chunk in request.stream():
+        chunks.extend(chunk)
+        if len(chunks) > limit:
+            raise HTTPException(413, 'Request is too large')
+    try:
+        value = json.loads(chunks)
+        if not isinstance(value, dict):
+            raise ValueError()
+        return value
+    except ValueError:
+        raise HTTPException(400, 'Invalid request')
+
+
+def text_field(data, key, max_length, min_length=1):
+    value = data.get(key)
+    if not isinstance(value, str) or not min_length <= len(value.strip()) <= max_length:
+        raise HTTPException(422, f'Invalid {key}')
+    return value.strip()
+
+
+def source_identity(url):
+    """Ignore citation tracking/fragments, but preserve meaningful query parameters."""
+    parsed = urlparse(url)
+    query = urlencode(sorted((k, v) for k, v in parse_qsl(parsed.query, keep_blank_values=True)
+                             if not k.lower().startswith('utm_')))
+    return (parsed.scheme, parsed.netloc.lower(), parsed.path.rstrip('/'), query)
+
+
+def research_failure(code, message, result, **counts):
+    # Only a small allowlist of operational fields leaves the server. Never
+    # return raw provider errors, prompts, response text, or credentials.
+    usage = result.get('usage') or {}
+    safe_usage = {key: usage[key] for key in ('input_tokens', 'output_tokens', 'total_tokens')
+                  if type(usage.get(key)) is int}
+    details = usage.get('output_tokens_details') or {}
+    if type(details.get('reasoning_tokens')) is int:
+        safe_usage['reasoning_tokens'] = details['reasoning_tokens']
+    diagnostic = {'stage': 'research', 'code': code, 'usage': safe_usage,
+                  'search_calls': sum(item.get('type') == 'web_search_call' for item in result.get('output') or []), **counts}
+    print(json.dumps({'event': 'research-failed', **diagnostic}), flush=True)
+    raise HTTPException(502, {'message': message + ' No voice sessions were started; no automatic retry was made.',
+                              'diagnostic': diagnostic})
+
+
+async def openai(path, payload=None, timeout=75):
+    key = os.getenv('OPENAI_API_KEY')
+    if not key:
+        raise HTTPException(503, 'OPENAI_API_KEY is not configured in radio Preview.')
+    # No SDK retries, model fallbacks, or provider response bodies in logs/errors.
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            response = await client.post(API + path, json=payload or {}, headers={'Authorization': 'Bearer ' + key})
+    except httpx.TimeoutException:
+        raise HTTPException(504, 'OpenAI did not reply before the request timeout. No automatic retry was made. The request may still have incurred usage.')
+    except httpx.HTTPError:
+        raise HTTPException(502, 'OpenAI connection failed. No automatic retry was made.')
+    if response.status_code >= 400:
+        try:
+            provider_code = (response.json().get('error') or {}).get('code')
+        except (ValueError, AttributeError):
+            provider_code = None
+        explanations = {
+            'invalid_api_key': 'OpenAI rejected the Preview API key as invalid.',
+            'model_not_found': 'The configured OpenAI model is unavailable to this API project.',
+            'insufficient_quota': 'OpenAI reports insufficient API credit or an exhausted project quota.',
+            'billing_hard_limit_reached': 'OpenAI reports that the API spending limit has been reached.',
+            'rate_limit_exceeded': 'OpenAI reports that the API rate limit has been reached.',
+        }
+        if provider_code in explanations:
+            raise HTTPException(429 if response.status_code == 429 else 503,
+                                explanations[provider_code] + ' No automatic retry was made.')
+        if response.status_code == 429:
+            raise HTTPException(429, 'OpenAI quota, spend limit, or rate limit reached. The show has stopped; no automatic retries.')
+        if response.status_code in (401, 403):
+            raise HTTPException(503, 'OpenAI rejected access. Check the Preview key and model permissions.')
+        if response.status_code == 400:
+            # Invalid-request details are necessary to diagnose negotiation. The
+            # exact server credential and credential-like strings are scrubbed;
+            # never echo an SDP offer or its temporary transport credentials.
+            try:
+                error = response.json().get('error') or {}
+                message = str(error.get('message') or 'Invalid request.')
+                message = message.replace(key, '[redacted]')
+                message = re.sub(r'sk-[A-Za-z0-9_-]+', '[redacted]', message)
+                if 'v=0' in message or 'ice-pwd' in message or 'Bearer ' in message:
+                    message = 'The session transport request was rejected; transport credentials are withheld.'
+                message = message[:600]
+            except (ValueError, AttributeError):
+                message = 'Invalid request.'
+            raise HTTPException(502, 'OpenAI rejected the request: ' + message + ' No automatic retry was made.')
+        raise HTTPException(502, f'OpenAI could not complete the request ({response.status_code}). No automatic retry was made.')
+    return response.json() if response.content else {}
+
+
+@app.middleware('http')
+async def headers(request, call_next):
+    response = await call_next(request)
+    response.headers.update({'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'no-referrer', 'X-Robots-Tag': 'noindex, nofollow',
+        'Content-Security-Policy': "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; media-src 'self' blob:; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'",
+        'Permissions-Policy': 'microphone=(), camera=(), geolocation=()'})
+    return response
+
 
 @app.get('/')
-def home():
+async def home():
     return FileResponse(ROOT / 'site/index.html')
 
-@app.get('/api/station')
-def station():
-    degraded = False
+
+@app.get('/api/privacy-probe')
+async def privacy_probe():
+    # An unauthenticated caller must never reach this on a protected Preview.
+    return Response(status_code=204)
+
+
+@app.get('/api/status')
+async def status(request: Request):
     try:
-        editions = db.catalog(engine)
-    except Exception:
-        editions, degraded = [], True
-    now = time.time()
-    # An immutable program snapshot per UTC hour. A new publication enters the
-    # shared clock at the NEXT hour, so current listeners never jump mid-edition.
-    anchor = int(now // 3600) * 3600
-    eligible = [e for e in editions if e['published_at'] <= anchor]
-    playlist = ([dict(eligible[0], kind='edition')] if eligible else []) + [EVERGREEN]
-    cycle = sum(e['duration'] for e in playlist)
-    offset = (now - anchor) % cycle
-    current = playlist[-1]
-    for item in playlist:
-        if offset < item['duration']:
-            current = item
-            break
-        offset -= item['duration']
-    return JSONResponse({'server_time': now, 'editions': editions, 'evergreen': EVERGREEN,
-        'latest_published_at': editions[0]['published_at'] if editions else None,
-        'generation_active': not blockers(), 'degraded': degraded,
-        'live': {'anchor': anchor, 'item': current, 'offset': offset,
-                 'next_boundary': min(now + current['duration'] - offset, anchor + 3600)}},
-        headers={'Cache-Control': 'no-store'})
-
-@app.get('/api/health')
-def health():
-    return {'status': 'ok', 'generation_active': not blockers()}
-
-@app.get('/api/admin/status')
-def admin_status(request: Request):
-    authorize(request, 'CRON_SECRET')
-    recent = []
-    if engine is not None:
-        with engine.connect() as c:
-            recent = [dict(r) for r in c.execute(select(db.runs).order_by(db.runs.c.started_at.desc()).limit(10)).mappings()]
-    return {'blockers': blockers(), 'runs': recent}
-
-@app.post('/api/admin/initialize')
-def initialize(request: Request):
-    authorize(request, 'CRON_SECRET')
-    if engine is None:
-        raise HTTPException(503, 'Dedicated Postgres is not configured')
-    db.initialize(engine)
-    return {'status': 'initialized'}
-
-@app.post('/api/jobs/edition')
-def edition_job(request: Request):
-    authorize(request, 'CRON_SECRET')
-    if blockers():
-        return JSONResponse({'status': 'disabled'}, status_code=503)
-    # Use the scheduled timestamp, not delivery time, to deduplicate delayed runs.
-    from datetime import datetime
-    scheduled = request.headers.get('ce-vssscheduledat')
-    try:
-        stamp = datetime.fromisoformat(scheduled.replace('Z', '+00:00')).timestamp() if scheduled else time.time()
-    except ValueError:
-        raise HTTPException(400, 'Invalid schedule timestamp')
-    run_id = 'edition-' + str(int(stamp // (6 * 3600)))
-    try:
-        return publish(engine, Gemini(), Blob(), run_id, int(os.getenv('RADIO_MAX_DAILY_EDITIONS', '1')))
-    except Exception:
-        return JSONResponse({'status': 'failed', 'run_id': run_id,
-                             'message': 'Last complete edition is unchanged.'}, status_code=503)
-
-@app.post('/api/blue/drafts', status_code=202)
-async def blue_draft(request: Request):
-    authorize(request, 'BLUE_DRAFT_SECRET')
-    if engine is None:
-        raise HTTPException(503, 'Draft storage is not configured')
-    body = b''
-    async for chunk in request.stream():
-        body += chunk
-        if len(body) > 16000:
-            raise HTTPException(413, 'Draft exceeds 16 KB')
-    try:
-        draft = BlueDraft.model_validate_json(body)
-    except ValueError:
-        raise HTTPException(422, 'Invalid draft schema')
-    with engine.begin() as c:
-        # Serialize the daily submission count across concurrent Blue requests.
-        c.execute(select(db.lease.c.id).where(db.lease.c.id == 1).with_for_update()).one()
-        existing = c.execute(select(db.drafts).where(db.drafts.c.id == draft.id)).mappings().first()
-        if existing:
-            if existing['body'] != draft.model_dump():
-                raise HTTPException(409, 'Draft ID already used for different content')
-            return {'status': 'already_received', 'id': draft.id}
-        count = c.execute(select(func.count()).select_from(db.drafts).where(
-            db.drafts.c.received_at > time.time() - 86400)).scalar_one()
-        if count >= 4:
-            raise HTTPException(429, 'Daily draft limit reached')
+        await protected_preview(request)
+        secret()  # Fail closed if the new Preview key has not reached this build.
         try:
-            c.execute(insert(db.drafts).values(id=draft.id, body=draft.model_dump(), received_at=time.time()))
-        except IntegrityError:
-            raise HTTPException(409, 'Draft already submitted; retry with identical content')
-    return {'status': 'received', 'id': draft.id}
+            token = request.cookies.get('radio_pilot', '')
+            verify(token, 'access')
+        except HTTPException:
+            token = sign({'owner': secrets.token_hex(16)}, 'access', 43200)
+        response = JSONResponse({'unlocked': True, 'configured': True,
+                                 'preview': True, 'hosts': HOSTS, 'duration_seconds': 540})
+        response.set_cookie('radio_pilot', token, httponly=True, secure=True,
+                            samesite='strict', max_age=43200)
+        return response
+    except HTTPException as error:
+        return JSONResponse({'unlocked': False, 'configured': bool(os.getenv('OPENAI_API_KEY')),
+                             'preview': os.getenv('VERCEL_ENV') == 'preview',
+                             'message': error.detail}, status_code=error.status_code)
+
+
+BRIEF_SCHEMA = {
+    'type': 'object', 'additionalProperties': False,
+    'properties': {key: {'type': 'string', 'minLength': 1} for key in ['title', 'uncertainties', 'social_context']},
+    'required': ['title', 'uncertainties', 'social_context'],
+}
+
+BRIEF_SCHEMA['properties'].update(conversation=PLAN_SCHEMA, evidence=EVIDENCE_SCHEMA)
+BRIEF_SCHEMA['required'] += ['conversation', 'evidence']
+
+
+@app.post('/api/research')
+async def research(request: Request):
+    same_origin(request)
+    preview_only()
+    owner = authorize(request)['owner']
+    await protected_preview(request)
+    data = await body(request, 4000)
+    question = text_field(data, 'question', 1200, 3)
+    result = await openai('/responses', {
+        'model': 'gpt-5.6-luna', 'store': False,
+        # This allowance includes hidden reasoning as well as the final brief.
+        # Keep the written brief short without starving multi-step web research.
+        'reasoning': {'effort': 'low'}, 'max_output_tokens': 6000, 'max_tool_calls': 3,
+        'tools': [{'type': 'web_search', 'search_context_size': 'low'}], 'tool_choice': 'required',
+        'include': ['web_search_call.action.sources'],
+        'instructions': f'As-of date: {datetime.now(timezone.utc).date().isoformat()} UTC. ' + PRODUCER,
+        'input': question,
+        'text': {'format': {'type': 'json_schema', 'name': 'producer_brief', 'strict': True, 'schema': BRIEF_SCHEMA}},
+    })
+    if result.get('status') != 'completed':
+        reason = (result.get('incomplete_details') or {}).get('reason')
+        if reason == 'max_output_tokens':
+            research_failure('research_token_limit', 'The producer exhausted its output allowance before finishing the brief.', result)
+        if reason == 'content_filter':
+            research_failure('research_filtered', 'OpenAI could not complete research for this topic.', result)
+        research_failure('research_incomplete', 'OpenAI returned unfinished research.', result)
+    sources = {}
+    output = []
+    searched = False
+    for item in result.get('output') or []:
+        if item.get('type') == 'web_search_call':
+            searched = True
+            for source in (item.get('action') or {}).get('sources') or []:
+                url = source.get('url', '')
+                if url.startswith('https://'):
+                    sources[url] = {'url': url, 'title': source.get('title') or urlparse(url).netloc}
+        for content in item.get('content') or []:
+            if content.get('type') == 'refusal':
+                research_failure('research_refused', 'OpenAI declined to produce this research brief.', result)
+            if content.get('type') == 'output_text':
+                output.append(content['text'])
+                for annotation in content.get('annotations') or []:
+                    url = annotation.get('url', '')
+                    if annotation.get('type') == 'url_citation' and url.startswith('https://'):
+                        sources[url] = {'url': url, 'title': annotation.get('title') or urlparse(url).netloc}
+    if not searched:
+        research_failure('research_search_missing', 'The producer returned no web-search call.', result)
+    if not sources:
+        research_failure('research_sources_missing', 'The search returned no usable HTTPS source links.', result)
+    if not output:
+        research_failure('research_text_missing', 'The search finished but the producer returned no written brief.', result, sources=len(sources))
+    try:
+        brief = json.loads(''.join(output))
+    except (ValueError, TypeError):
+        research_failure('research_invalid_json', 'The producer returned a brief in an unreadable format.', result, sources=len(sources))
+    if not isinstance(brief, dict) or any(not isinstance(brief.get(k), str) or not brief[k].strip() for k in BRIEF_SCHEMA['required'] if k not in ('conversation', 'evidence')):
+        research_failure('research_fields_missing', 'The producer omitted part of the factual brief or host angles.', result, sources=len(sources))
+    plan = brief.get('conversation')
+    evidence = brief.get('evidence')
+    if not isinstance(plan, dict) or plan.get('mode') not in PLAN_SCHEMA['properties']['mode']['enum'] or any(not isinstance(plan.get(k), str) or not plan[k].strip() for k in PLAN_SCHEMA['required']):
+        research_failure('research_plan_missing', 'The producer did not finish the conversation plan.', result)
+    source_lookup = {source_identity(url): url for url in sources}
+    if isinstance(evidence, list):
+        for entry in evidence:
+            if isinstance(entry, dict) and isinstance(entry.get('source_url'), str):
+                entry['source_url'] = source_lookup.get(source_identity(entry['source_url']), entry['source_url'])
+    if not isinstance(evidence, list) or any(not isinstance(e, dict) or any(not isinstance(e.get(k), str) or not e[k].strip() for k in EVIDENCE_SCHEMA['items']['required']) for e in evidence):
+        research_failure('research_evidence_unlinked', 'The producer did not finish its evidence cards.', result)
+    linked = [entry for entry in evidence if entry['source_url'] in sources]
+    if not linked:
+        research_failure('research_evidence_unlinked', 'The producer did not link any evidence to returned search sources.', result)
+    if len(linked) != len(evidence):
+        brief['uncertainties'] += f" {len(evidence) - len(linked)} draft evidence cards were excluded because their links could not be matched to search results. Do not use facts or examples from the editorial plan unless supported by the retained evidence."
+    brief['evidence'] = linked
+    # Put the producer's cited evidence ahead of additional search discoveries.
+    # Never manufacture source links from generated text.
+    brief_text = json.dumps(brief)
+    ordered_sources = sorted(sources.values(), key=lambda source: source['url'] not in brief_text)
+    show = {'id': secrets.token_hex(16), 'owner': owner, 'question': question, 'brief': brief,
+            'sources': ordered_sources[:30], 'researched_at': datetime.now(timezone.utc).isoformat(),
+            'research_usage': result.get('usage'), 'research_model': result.get('model'),
+            'search_calls': sum(i.get('type') == 'web_search_call' for i in result.get('output', []))}
+    return dict(show, ticket=sign(show, 'brief', 1200))
+
+
+def host_config(show, index):
+    host, other = HOSTS[index], HOSTS[1 - index]
+    return {
+        'model': 'gpt-live-1', 'store': False,
+        'audio': {'output': {'voice': host['voice']}}, 'delegation': {'type': 'client'},
+        'client': {'data_channel': {'allowed_client_events': [
+            'session.close', 'session.instructions.append', 'session.thinking.append', 'session.commentary.append'],
+            'allowed_server_events': 'all'}},
+        'instructions': (
+            f"You are {host['name']}, an original fictional AI podcast host with {other['name']}. {host['character']} "
+            'Your incoming audio is your co-host, not the human listener. Listen to the actual words and build on one specific idea they just said. '
+            'Talk together, not to a panel. Usually share one thought and leave space: most contributions are a sentence or two, often 8–15 seconds. A quick reaction can be enough; a worthwhile story can be longer. These are flexible rhythms, not a repeating formula. '
+            'Discuss the listener’s question WITH EACH OTHER, not as two advisers interviewing an absent listener. Answer your co-host’s questions with your own view. Missing listener details are an invitation to compare plausible situations, not repeatedly ask the listener for information. '
+            'Let the actual conversation determine what happens next. Agreement needs no praise speech; disagreement needs a reason. Once a point is settled, leave it behind: follow a new implication or something else that genuinely interests you. Do not fill time by rephrasing the same advice or reassuring each other. '
+            'The producer supplies optional ingredients, not a script or checklist. Use retained evidence cards for factual claims; distinguish uncertainty, preference and hypothetical examples. Never invent personal memories, ownership stories or quotes. Do not read URLs aloud. If listener context is missing, explore plausible cases without assuming their circumstances. '
+            'You are fictional AI hosts. Introduce only yourself, once; your co-host will introduce themselves. Never read microphone cues aloud. '
+            'Backchannel policy: Listen silently while the other microphone is open, even when asked a question. An ON AIR cue opens yours. Stop at a natural pause when you have made your contribution. '
+            'Interruption policy: LISTEN means stop immediately without an acknowledgment. Do not impersonate your co-host. '
+            'Delegation policy: No tools are available during the show. State when a follow-up needs facts you do not have.'),
+        'input': [{'type': 'message', 'role': 'user', 'content': [{'type': 'input_text', 'text': json.dumps({
+            'listener_question': show['question'], 'producer_brief': show['brief'],
+            'sources': show['sources'], 'researched_at': show['researched_at'],
+            'your_angle': show['brief']['conversation']['mara_interest' if index == 0 else 'eli_interest']})}]}],
+    }
+
+
+@app.post('/api/session')
+async def session(request: Request):
+    same_origin(request)
+    preview_only()
+    owner = authorize(request)['owner']
+    await protected_preview(request)
+    data = await body(request, 80000)
+    show = verify(text_field(data, 'ticket', 50000), 'brief')
+    if show['owner'] != owner:
+        raise HTTPException(403, 'This brief belongs to a different browser session')
+    index = data.get('host')
+    if type(index) is not int or index not in (0, 1):
+        raise HTTPException(422, 'Invalid host')
+    sdp = data.get('sdp')
+    if not isinstance(sdp, str) or not 1 <= len(sdp) <= 20000 or not sdp.strip():
+        raise HTTPException(422, 'Invalid sdp')
+    # SDP is a wire format. Preserve its terminating CRLF; stripping whitespace
+    # can turn the browser's valid offer into an invalid negotiation request.
+    result = await openai('/live/sessions', {'session': host_config(show, index),
+                                           'transport': {'type': 'webrtc', 'sdp': sdp}}, timeout=25)
+    session_id = result['session']['id']
+    return {'session': result['session'], 'transport': result['transport'],
+            'close_ticket': sign({'session_id': session_id}, 'close', 3600)}
+
+
+@app.post('/api/close')
+async def close(request: Request):
+    same_origin(request)
+    data = await body(request, 4000)
+    capability = verify(text_field(data, 'ticket', 2000), 'close')
+    session_id = capability['session_id']
+    if not re.fullmatch(r'[A-Za-z0-9_-]+', session_id):
+        raise HTTPException(400, 'Invalid session identifier')
+    await openai('/live/sessions/' + session_id + '/hangup', timeout=10)
+    return {'closed': True}
+
+
+@app.websocket('/api/live')
+async def live_relay(socket: WebSocket):
+    accepted = False
+    try:
+        same_origin(socket)
+        await socket.accept()
+        accepted = True
+        preview_only()
+        owner = authorize(socket)['owner']
+        await protected_preview(socket)
+        import asyncio
+        raw = await asyncio.wait_for(socket.receive_text(), 10)
+        if len(raw) > 80000:
+            raise ValueError('Oversized relay request')
+        data = json.loads(raw)
+        if data.get('type') == 'check':
+            from relay import run_relay
+            await socket.send_json({'type': 'check-ok'})
+            return
+        show = verify(text_field(data, 'ticket', 50000), 'brief')
+        if show['owner'] != owner:
+            raise ValueError('Wrong browser session')
+        duration = data.get('duration')
+        history = data.get('history', '')
+        first_host = data.get('first_host', 0)
+        if type(duration) not in (int, float) or not 1 <= duration <= 210:
+            raise ValueError('Invalid duration')
+        if not isinstance(history, str) or len(history) > 18000 or type(first_host) is not int or first_host not in (0, 1):
+            raise ValueError('Invalid relay context')
+        from relay import run_relay
+        await run_relay(socket, [host_config(show, i) for i in range(2)], os.environ['OPENAI_API_KEY'],
+                        duration, history, first=not bool(history), first_host=first_host)
+    except HTTPException as error:
+        if accepted:
+            await socket.send_json({'type': 'relay-error', 'message': error.detail})
+    except Exception as error:
+        # Do not log credentials, tickets, or transport data from a failed socket.
+        if accepted:
+            try:
+                await socket.send_json({'type': 'relay-error', 'message': 'Audio relay setup failed (' + type(error).__name__ + '). No automatic retry was made.'})
+            except Exception:
+                pass
+    finally:
+        try:
+            await socket.close()
+        except Exception:
+            pass
+
 
 app.mount('/assets', StaticFiles(directory=ROOT / 'site/assets'), name='assets')

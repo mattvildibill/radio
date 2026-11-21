@@ -1,184 +1,244 @@
-# Radio
+# Ask the Hosts — private radio Preview pilot
 
-A small FastAPI radio station for `radio.mattvildibill.com`. Fictional synthetic
-hosts **Alex** (Kore, clear-eyed explainer) and **Morgan** (Puck, curious challenger)
-discuss a few sourced developments, with commentary explicitly labeled.
+A typed question goes to an OpenAI Responses producer with web search. Only after a
+completed, sourced brief does the browser open **two GPT-Live sessions**:
+Mara (Gleam) and Eli (Vesper). They receive the same factual brief and separate
+angles. Their actual received audio is cross-routed through the private server relay; no script
+or text-to-speech substitution supplies the co-host's words.
+
+**Current status:** the private Preview completed a real 90-second, two-host
+OpenAI show, answered the hospital follow-up, finalized both sessions, and
+replayed the saved conversation after reload. Full-duration verification is
+recorded in [VALIDATION.md](VALIDATION.md).
 
 ## Scope
 
-- Repository: `mattvildibill/radio`, existing visibility preserved.
-- Vercel project: `radio`, `prj_xis6TWeCFzr2f0acjUjx92SPTAtC`.
-- Owning account ID: `team_MIAl94GGSmIOtH1nytFMKdpU`.
-- Only custom domain: `radio.mattvildibill.com`.
-- Never modify the portfolio, other projects, shared settings or existing automations.
-- Use this checkout. Cloud tasks are already isolated; do not create a worktree
-  unless the user explicitly requests one.
+- Only `https://github.com/mattvildibill/radio.git`.
+- Only the existing Vercel `radio` project in `mattvildibills-projects`.
+- Recorded project ID: `prj_xis6TWeCFzr2f0acjUjx92SPTAtC`.
+- Recorded team ID: `team_MIAl94GGSmIOtH1nytFMKdpU`.
+- Branch `codex/ask-the-hosts-pilot`; Preview only. Do not merge or deploy Production.
+- Do not create a replacement Vercel project when access fails. Do not change
+  shared settings, other projects, old credentials or integrations.
 
-## Current activation state
+This branch replaces the inactive station. Its original implementation remains
+in Git history (`3223524`). No database, Blob store, cron, Gemini key, or old
+integration is used by this app. No external settings were removed or modified.
 
-Generation is disabled and no schedule is registered. No Gemini account, model
-quota, production Postgres, or production Blob store has been verified. The app
-can serve its original, clearly labeled evergreen instrumental interlude without
-any of those integrations. This is not a completed news station yet.
+## Private access and credentials
 
-The project identity and existing Git integration were verified with Vercel’s
-API. The production deployment independently reports `plan: hobby`, verifying the
-free account despite the account-level billing endpoint denying access. The
-player is deployed at https://radio.mattvildibill.com with working HTTPS and
-evergreen playback. This token cannot create Blob stores (Vercel returned 403);
-no store was created. Do not substitute an upgrade, trial, credit balance, billing
-alert, or paid fallback for a free plan that stops at its limit.
+Use the existing **Vercel Authentication** gate on this stable branch Preview:
 
-## Local development
+https://radio-git-codex-ask-the-hosts-pilot-mattvildibills-projects.vercel.app
+
+The only required application credential is the user's newly added server-side
+`OPENAI_API_KEY` in **radio Preview**. No second pilot password is needed, and
+older keys/integrations remain untouched. Do not reveal or copy the key to the
+browser. Existing Vercel authentication is the access-control authority.
+
+Before granting an app session or starting any new billable request, the server
+probes `/api/privacy-probe` on that **exact fixed radio Preview hostname** with
+no authentication, cookies, or redirect following. It must get the verified
+Vercel SSO redirect. If protection is disabled the app's probe returns 204, and
+admission fails closed; unknown responses and network failures also block starts.
+Other hostnames and non-Preview environments cannot start this pilot. Only the
+stable branch URL is supported; immutable deployment URLs are intentionally not
+accepted for show starts.
+
+After Vercel authentication and the protection check, the app issues a 12-hour
+Secure, HttpOnly, SameSite=Strict browser cookie. Capability-signing material is
+derived server-side from OPENAI_API_KEY with a separate HMAC purpose. The API key
+and derived secret are never returned. Research tickets expire after 20 minutes
+and are bound to that browser session. Mutating routes require the same origin.
+Closing uses a separate short-lived capability so session cleanup remains
+possible after app access expires. No cross-origin CORS is enabled.
+
+The private pilot assumes a trusted owner: signed brief tickets can be reused
+within their expiry and there is no distributed concurrency/spend ledger. Do not
+open this app to a wider audience without durable server-side metering and
+single-use admission control. No Vercel protection settings are changed by code.
+
+## Live show and cost controls
+
+- Responses: `gpt-5.6-luna`, web search, at most three tool calls, 6,000 output
+  tokens shared by reasoning and the final brief, low reasoning, a compact editorial brief (target under 650 words),
+  no stored response. Sources come from actual search
+  actions/citations; no sourced brief means no host sessions.
+- GPT-Live: `gpt-live-1`, `store: false`, client delegation. No paid backend
+  delegation is launched during the show. Follow-ups needing new facts are
+  acknowledged as uncertain rather than invented.
+- A show runs for **up to nine minutes**, ending at a natural closing pause in
+  the final 15 seconds. A same-project WebSocket relay carries PCM audio. It uses Fluid Compute,
+  capped at the Hobby-compatible 300 seconds per invocation. Relay segments
+  end at a natural handoff after three minutes (hard cap 210 seconds); both
+  sessions finalize before the next pair starts with the aired conversation
+  and follow-ups as context. The whole show remains capped at nine minutes.
+  No database, new hosting service, or paid Vercel feature is needed.
+  The player uses one verified relay path. The experimental WebRTC player was
+  removed so conversation rules no longer diverge between transports.
+- The controller assigns the floor, routes only on-air audio to the listener and
+  co-host, and waits for measured media silence before handoff. An opening-only 15-second emergency cap prevents one host owning the introduction.
+  Later turns retain a 40-second safety cap for occasional longer stories. Gentle
+  timing notes use context, not mid-speech instruction replacement; these are
+  safeguards, not the desired duration of every turn. Short `session.commentary.append` cues actually trigger
+  speech; instruction changes alone do not guarantee a greeting. One silence cue is allowed, then the show stops; it never
+  retries failed paid sessions. Planned relay continuations require confirmed
+  closure of the previous pair; they are not error recovery.
+- Both hosts have separate context and receive the other host's audio. A typed
+  follow-up is added to both at the next handoff. The next host is cued to answer.
+- Stop, nine-minute timeout, hidden tab, suspended audio, offline state, peer
+  disconnect, or provider error closes both sessions. Normal closure waits for
+  `session.closed`; missing finalization is disclosed. Unload sends Stop and closes
+  the relay socket. The connection-owned server task closes both upstream sessions;
+  abrupt process loss still depends on provider transport-disconnect handling.
+- No automatic HTTP retries or model fallback, including quota/spend-limit errors.
+- Usage: record the latest cumulative `usage.seconds` per host, replace rather
+  than add snapshots, retain final usage and research tokens in downloadable notes.
+- Official GPT-Live pricing checked November 18, 2026: **$0.05 per session-minute**.
+  Two nine-minute sessions are approximately **$0.90 voice**, plus connection/
+  shutdown time and separate research/search costs. A 15-second startup charge is
+  credited against running duration. This is an estimate, not an invoice.
+- The $15 OpenAI project budget remains external; the app cannot verify that a
+  dashboard budget is a hard billing cap. Check remaining project spend before
+  repeated shows. Local tests do not call OpenAI; real acceptance should use one
+  short show, promptly stopped.
+
+## Recording and replay
+
+Recording is opt-in, via **Record & save**. MediaRecorder captures the compressed
+mixed stream before listener volume control. No microphone is requested.
+Recordings and metadata are stored in **IndexedDB on this browser/device/origin**,
+not uploaded. The library has a 100 MB application cap; storage/quota failures
+surface an export link. One-second chunks are appended independently, without rewriting growing audio blobs.
+Partial audio is retained on abrupt closure, marked “Recording · interrupted.”
+
+Each replay says **Recording**, shows the original local date/time with the
+recorded IANA time zone, elapsed age, duration, research timestamp and source
+links. Reload preserves the library; clearing site data removes it. There is no
+cross-device sync. Use the same stable branch-preview origin across deployments,
+and export important recordings. Browser profiles/OS accounts provide local
+storage privacy; a studio passphrase is not encryption of IndexedDB.
+
+### Short pilot check
+
+Open **Try a short pilot → Run & record a 90-second pilot** in the protected
+Preview. This explicitly opts into recording, runs the same research and live
+audio paths as an ordinary show, and injects a hospital-staffing follow-up after
+35 seconds. Both sessions close by 90 seconds, or at a natural closing pause in the final 15 seconds; Stop still works at any time.
+There are no retries or additional model calls for evaluation.
+
+The report preserves timestamped input/output transcript fragments, measured
+on-air audio levels, research sources/usage, closure events and final session
+usage in this browser. It excludes API keys and signed app capabilities. Click
+**Reload to check saved playback**, then play the saved Recording. The report
+separately records successful post-reload audio decoding and playback. Download
+the report and export audio for review. Transport checks do not automatically
+certify natural conversation, voice quality, factual accuracy, or whether a
+spoken follow-up answer is relevant; those require listening.
+
+## Development and checks
 
 ```sh
-cd /workspace/radio
-python3 -m venv .venv
+python -m venv .venv
 .venv/bin/pip install -r requirements-dev.txt
 .venv/bin/pytest -q
-.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8000
+npm test
+npm run check
+# Local rendering is available; paid calls require the protected Preview:
+.venv/bin/uvicorn app:app --host 127.0.0.1 --port 8766
 ```
 
-No secrets are required to run the player with the evergreen interlude. Tests use
-SQLite as a disposable adapter and controlled provider doubles; they do not
-establish real Gemini, Blob, Postgres, Blue or scheduled-cloud success.
+A local-only browser fixture tests the actual IndexedDB library and actual replay
+UI with mixed test tones, without any provider credentials:
 
-## Free-only production setup
-
-1. Verify the owning Vercel account is **Hobby**, with hard free limits. Do not
-   change account-wide settings. The current Schedules beta supports Hobby with
-   a 15-minute jitter window and hard monthly run limits. Legacy Cron Jobs differ.
-2. Provision one **radio-only Postgres database** on a verified free plan (for
-   example Neon Free, with no paid upgrade or overages). Connect it only to radio
-   and set `DATABASE_URL` in radio's server-side Production environment. Use TLS.
-   A Vercel token does not automatically authorize a new database provider account.
-3. Create one **public Vercel Blob store dedicated to radio**, on the verified
-   Hobby account, and connect only radio. Set its `BLOB_READ_WRITE_TOKEN`. Hobby
-   stops access when free usage is exceeded; it does not bill overages.
-4. In Google AI Studio create/select a **dedicated radio API project with billing
-   disabled**. A Gemini consumer subscription is not proof of API access. Inspect
-   the actual free-tier model limits in AI Studio, including text and two-speaker
-   speech. Set `GEMINI_API_KEY`, `GEMINI_TEXT_MODEL`, `GEMINI_TTS_MODEL` only in
-   radio's server-side settings. Never place credentials in source or chat.
-5. Confirm the specific text model and TTS model work with the account. Measure a
-   short real edition: two text calls (writer + independent editor) and one TTS
-   call, including tokens, time and quota. Listen to it. Check that the selected
-   TTS model supports Kore/Puck in `multiSpeakerVoiceConfig`. If free TTS is
-   unavailable, leave generation disabled; do not select a paid fallback.
-6. `CRON_SECRET` and `BLUE_DRAFT_SECRET` are separate random radio-only secrets.
-   Production values were created directly in radio's Vercel settings. Do not
-   rotate or overwrite existing values unnecessarily.
-7. Initialize the dedicated database using authenticated
-   `POST /api/admin/initialize`. No public request creates schema automatically.
-8. Once free plans and actual quotas are verified, set
-   `RADIO_FREE_TIER_VERIFIED=1`, `RADIO_GENERATION_ENABLED=1`, and
-   `RADIO_MAX_DAILY_EDITIONS=1` initially. These flags record an operator's completed
-   verification; they do not perform or prove billing verification themselves.
-9. After a real edition passes audio/listener checks, run
-   `python -m scripts.enable_schedule` with the verified settings available, and
-   deploy the resulting `vercel.json` to **only** the existing radio project.
-   Four UTC opportunities (00:00, 06:00, 12:00, 18:00, plus up to 15 minutes jitter)
-   are bounded by the database daily attempt limit. Raise the limit to at most 4
-   only after measured free quota supports it. Failed attempts count against it.
-
-Provider requests never automatically retry quota failures or switch models.
-Audio duration is bounded to 30–300 seconds and compressed to 48kbps MP3. At
-400MB of published audio or 1,000 coverage records the generator stops safely
-pending maintenance; it never deletes coverage history or silently incurs costs.
-Unpublished uploads after a failed transaction can be orphaned. Inspect and remove
-only confirmed radio orphans during maintenance; free Blob hard limits still apply.
-
-Public sources currently used: BBC World RSS, NPR News RSS, NASA news releases.
-Only recent (48h) dated entries are considered. Unsupported redirects and failed
-feeds are skipped. Source excerpts and Blue submissions are untrusted data.
-No full-article scraping, paid news API or model web-search tool is used.
-
-## Publication and failure behavior
-
-The Postgres writer lease serializes generation. Each six-hour UTC slot has a
-stable publication ID. A completed slot can be retried without narrating or
-publishing again; failed attempts are capped and count against daily usage.
-
-All retained development history is provided to both the writer and a separate
-editorial review. Exact normalized developments are rejected in code; the editor
-must reject semantic paraphrases without material new facts. This model-based
-judgment is not perfect and requires evaluation against real news before activation.
-Coverage and publication state are committed together, only after complete audio
-is uploaded and its size/content type verified. Generation or upload failure
-leaves the previous edition unchanged. A database outage falls back to the bundled
-evergreen audio; it does not expose an incomplete edition.
-
-## Listening
-
-**Play something new** chooses the newest unheard edition, with completed listens
-stored on the device. It reports when caught up; no account or tracking is needed.
-**Tune in live** joins an hourly UTC program snapshot at the current offset. The
-latest edition available at the start of the hour alternates with evergreen
-audio. Newly published editions enter live rotation at the next UTC hour, while
-on-demand listeners can hear them immediately. Live joins do not mark an edition
-heard. User interaction is required for mobile audio playback.
-
-The interlude is an original 60-second synthesized instrumental, not a news report
-or an example of Gemini speech. Its source recipe is documented in
-`scripts/make_interlude.py`. Synthetic host disclosure appears in the player and
-is required in generated introductions. Transcript turns distinguish reporting,
-questions and commentary; stories include source links and material changes.
-
-## Blue handoff
-
-No Blue connection or task is configured. Configure only a new radio-specific task
-once Blue access is available. It should submit one deeper feature, never own the
-routine schedule, and use its dedicated bearer credential:
-
-```http
-POST https://radio.mattvildibill.com/api/blue/drafts
-Authorization: Bearer <BLUE_DRAFT_SECRET>
-Content-Type: application/json
-
-{
-  "id": "blue-feature-2026-11-13",
-  "title": "A concise feature title",
-  "thesis": "The grounded question this feature investigates, in at least thirty characters.",
-  "evidence": "Specific attributed facts, relevant context, uncertainty and a grounded counterargument.",
-  "sources": [
-    {"title": "Primary public source", "url": "https://example.org/primary"},
-    {"title": "Independent context", "url": "https://example.org/context"}
-  ]
-}
+```sh
+.venv/bin/uvicorn tests.browser_fixture:fixture --host 127.0.0.1 --port 8765
+# Open /storage-check, save the clearly labeled test mix, follow the library link,
+# reload and play it. /api/research deliberately returns a quota failure.
 ```
 
-Replace example sources with real evidence. Requests are limited to 16KB; up to
-four submissions per day are accepted. Use a stable draft ID: an identical retry
-returns `already_received`, and changed content under that ID returns 409. Drafts
-expire from consideration after 24 hours. The routine writer may skip a draft
-that lacks evidence or repeats coverage. A 202 confirms receipt, not publication.
-Verify one real Blue task delivery and subsequent consumption separately.
+`tests.browser_fixture` is never imported by `app.py`; it is not a deployed route.
 
-## Deployment and acceptance
+## Preview rollout and acceptance
 
-Run `python scripts/verify_scope.py` before pushing/deploying. The existing Vercel
-Git integration targets `main`; pushing may automatically deploy. Never create
-another Vercel project or run an interactive command that could relink it.
+Run `python scripts/verify_scope.py` before pushing. If a radio-scoped
+`RADIO_VERCEL_TOKEN` is already available it also verifies project identity; absent
+Vercel access, it verifies only the Git target and refuses any claim about the
+remote project. Never print tokens or environment-variable values.
 
-The custom domain was added only to radio and Vercel reports it verified and
-correctly configured. No DNS records were changed. Vercel's recommended CNAME,
-if a future correction is needed, is `radio` →
-`6c55931fe06d8ece.vercel-dns-017.com.`; recheck the exact value before changing DNS.
+Push the branch to radio. Its existing Git integration may create a Preview.
+Otherwise use Vercel's existing project's Git-connected Preview deployment flow,
+after verifying project identity. Never use `--prod`, create/relink a project,
+change production domains, or alter account settings.
 
-Required production acceptance still includes:
+Before calling this finished, run one **short real-API show on the protected
+Preview**. Verify research precedes speech; listen to both voices; confirm
+co-host input transcripts reflect played speech; send a follow-up and hear a
+contextual answer; record, stop, reload and play the saved conversation. Check
+both `session.closed` events and report measured API usage. Do not infer audible
+success from transcripts or local tests alone. A full eight-to-ten-minute runtime
+and Safari/mobile compatibility need their own verification if not exercised.
 
-- Real text generation and two-speaker narration, listened to and checked against sources.
-- Real Postgres/Blob atomic publication and retry tests.
-- Mobile playback and two-browser shared-clock tests against production HTTPS.
-- Duplicate development and genuine follow-up replay against real editorial models.
-- Failed generation leaving the last complete production edition playable.
-- Two distinct **scheduled cloud executions**, documented by schedule execution IDs
-  and distinct publication IDs. Manual invocations and local background processes
-  do not satisfy this check.
-- Real Blue handoff, if connected; its absence must not stop routine editions.
+Reference contracts checked against OpenAI Python SDK 3.55.0 and official docs:
+[GPT-Live WebRTC](https://developers.openai.com/api/docs/guides/realtime-webrtc),
+[session lifecycle](https://developers.openai.com/api/docs/guides/live-conversations),
+[GPT-Live pricing](https://developers.openai.com/api/docs/models/gpt-live-1).
+The runtime uses direct HTTPX and WebSocket calls; no AI Gateway, older integration, or SDK
+retry behavior is involved.
 
-Reference documentation checked during implementation:
-[Schedules limits](https://vercel.com/docs/schedules/limits),
-[Schedules configuration](https://vercel.com/docs/schedules/configuration),
-[Hobby limits](https://vercel.com/docs/plans/hobby),
-[Blob free limits](https://vercel.com/docs/vercel-blob/usage-and-pricing).
+## Adaptive conversation
+
+The producer selects taste, news, explainer, advice, speculation, or mixed based
+on listener intent. Taste episodes explore specific works and different criteria;
+news episodes require named dated events, affected people and explicit unknowns.
+The structured brief includes source-linked claims, limitations, an opening idea,
+optional threads, and separate host interests. Mara appreciates clever design and
+clear explanations but dislikes pointless complexity; Eli notices everyday hassle,
+pleasure and whether convenience is worth paying for. Neither is assigned an
+opposing conclusion. Agreement, questions and changed minds are welcome.
+
+Regular floor cues only grant the microphone: no rotating reaction/question/example
+assignments. Hosts choose their next contribution from the actual conversation.
+Most contributions should be a sentence or two, with natural variation; interesting
+stories may take longer. Both hosts introduce themselves, with an opening target
+of the second host audible within 12 seconds of the first. This target is measured
+separately from the transport checks and is not a guarantee of subjective quality. An
+explicitly unfinished thought can get one continuation, unless a listener is
+waiting. Silence-based handoffs remain sequential: overlap is intentionally deferred.
+Across relay segments, bounded memory preserves the opening, recent actual spoken
+words, stated views and delivered requests, without another paid summarization call.
+Up to eight follow-ups queue in order with visible delivery status. Pending requests
+survive a planned segment transition. Delivered does not prove the model answered well.
+
+Replays can be renamed and searched by title or original question. New recordings
+include exported transcript/research/usage notes; existing whole-blob recordings
+remain readable after the IndexedDB upgrade. No new hosting or storage service is used.
+
+### Editorial acceptance examples
+
+| Listener prompt | Desired approach | Reject |
+| --- | --- | --- |
+| Best movies ever? | Specific favorites, shared enthusiasm, different criteria and examples | A forced debate or mandatory current-news hook |
+| Recent outages and hacks—should I worry? | Named dated incidents, people affected, primary sources, technical failure versus confirmed intrusion | Generic outage explanations or invented coordination |
+| Why are cities hot at night? | A familiar observation, an understandable mechanism, a concrete example | A list of abstract definitions |
+| EV when I rent without a charger? | A realistic charging routine, costs and missing personal context | Universal advice or irrelevant argument |
+| What if humans could photosynthesize? | A playful hypothetical anchored in biology and clearly marked assumptions | Presenting an imagined scenario as observed fact |
+
+For live acceptance, inspect both received co-host audio transcripts and actual
+on-air output; sending a cue is not proof of a response. Queue two requests before
+a handoff and verify their order and relevance. Across a segment transition, check
+that the show retains early preferences and recent context without another intro.
+Record, stop, rename, search, reload, and play the saved media. Compare the audible
+result separately: text and RMS measurements cannot certify warmth, chemistry or
+absence of every click. Keep real runs bounded and retain final provider usage.
+
+The producer's opening is a question or situation of at most 20 words, not an
+answer paragraph. Optional paths are at most three short questions (500 characters),
+not a running order. Stable host preferences remain distinct from per-episode
+curiosities. Facts stay in shared evidence cards. No extra scriptwriting, critic,
+director or research agents run during a show.
+
+`conversationMetrics` reports actual second-host entrance, first-minute contributions
+and forced handoffs. The unused browser FloorController and its timing tests were
+removed: the Python relay is the only live microphone controller. The retained
+formatting/source utilities remain in controller.js for import compatibility.

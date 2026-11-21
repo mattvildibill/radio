@@ -1,0 +1,1 @@
+{"name":"radio-pilot","private":true,"type":"module","scripts":{"test":"node --test tests/*.test.js","check":"node --check site/assets/audio-start.js && node --check site/assets/player.js && node --check site/assets/controller.js && node --check site/assets/library.js && node --check site/assets/verification.js"},"devDependencies":{"fake-indexeddb":"^6.2.8"}}
