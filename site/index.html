@@ -1,26 +1,148 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>Ask the Hosts · Radio</title><link rel="stylesheet" href="/assets/style.css"><script type="module" src="/assets/player.js"></script></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="robots" content="noindex,nofollow">
+  <meta name="theme-color" content="#f6f2e8">
+  <title>Ask the Hosts · Radio</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script type="module" src="/assets/player.js"></script>
+</head>
 <body>
-<header><a href="/" class="brand">radio<span> / </span>ask the hosts</a><span class="private">PRIVATE PILOT</span></header>
-<main>
-<section id="access" hidden><p class="eyebrow">A small room. A good conversation.</p><h1>The private studio.</h1><p>Access is protected by your Vercel sign-in.</p><p id="access-status" role="status">Checking private access…</p><button id="retry-access">Check studio access</button></section>
-<div id="studio" hidden>
-<section class="intro"><p class="eyebrow">YOUR QUESTION. TWO DIFFERENT MINDS.</p><h1>Let’s talk<br>about it.</h1><p class="lede">A little research first. Then Mara and Eli work it out together—with you in the room.</p></section>
-<section class="desk" aria-label="Live studio">
-<form id="question-form"><label for="question">What’s on your mind?</label><textarea id="question" rows="2" maxlength="1200" required minlength="3" placeholder="Is a four-day workweek actually better for everyone?"></textarea><div class="start-row"><span>9 minutes · AI voices · no microphone</span><button id="start">Research & go on air <span>↗</span></button></div></form>
-<div class="on-air"><div><span id="signal" class="dot"></span><strong id="status" role="status">The studio is quiet</strong></div><time id="clock">00:00 / 09:00</time></div>
-<div class="hosts"><article id="host-0"><div class="avatar mara">M</div><div><h2>Mara</h2><p>The evidence, up close.</p></div><span class="host-state">Ready</span></article><article id="host-1"><div class="avatar eli">E</div><div><h2>Eli</h2><p>The unexpected connection.</p></div><span class="host-state">Ready</span></article></div>
-<div class="controls"><button id="stop" class="secondary" disabled>End show</button><button id="record" class="secondary" disabled>● Record & save</button><label class="volume">Volume <input id="volume" type="range" min="0" max="1" step="0.05" value="0.85"></label></div>
-<button id="enable-audio" type="button" class="secondary" hidden>Tap to enable sound</button><button id="test-sound" class="text-button" type="button">Test sound · no API use</button><p id="audio-status" class="small" role="status"></p>
-<p class="small">Record only when you choose. Replays stay in this browser on this device. Keep this tab visible during the show.</p>
-<form id="followup-form"><label for="followup">Join the conversation</label><div class="followup"><input id="followup" placeholder="Ask a follow-up, push back, or take a tangent…" maxlength="800" disabled required><button id="send" disabled>Send ↗</button></div><ul id="followup-queue" class="small" aria-label="Follow-up queue"></ul><p id="followup-status" class="small" role="status"></p></form>
-<p id="error" class="error" role="alert"></p><p id="recording-status" class="small" role="status"></p>
-</section>
-<section id="research" hidden><div class="section-heading"><h2>The producer’s desk</h2><span id="research-date"></span></div><p id="research-title"></p><details><summary>Read the factual brief</summary><div id="brief"></div></details><details><summary>Sources</summary><ul id="sources" class="sources"></ul></details></section>
-<section><div class="section-heading"><h2>Your replay library</h2><span>PRIVATE · THIS BROWSER</span></div><p class="small">These are recordings, never live broadcasts. Clearing browser data deletes them. Export a copy to keep it.</p><label for="replay-search">Find a recording</label><input id="replay-search" type="search" placeholder="Search titles or questions"><div id="library"><p class="empty">Nothing saved yet. A good conversation is worth keeping.</p></div></section>
-<details id="pilot-check"><summary>Try a short pilot</summary><p class="small">One click researches a four-day-workweek question, records 90 seconds with both hosts, and sends a hospital-staffing follow-up. It then closes both sessions and saves the result here. Uses your OpenAI key; roughly $0.15 for voices plus research and connection time. Keep this tab visible.</p><button id="run-pilot" class="secondary">Run & record a 90-second pilot</button><p id="pilot-status" role="status" class="small"></p><ul id="pilot-results" class="small"></ul><button id="pilot-reload" class="secondary" hidden>Reload to check saved playback</button><button id="pilot-download" class="secondary" hidden>Download pilot report</button></details>
-<details id="diagnostics"><summary>Show notes & usage</summary><p id="usage">No API calls this visit.</p><div id="transcript" aria-label="Conversation transcript"></div><button id="download-notes" class="secondary">Download show notes</button></details>
-<footer><span>Original fictional hosts. Generated voices. Sources you can inspect.</span><span>Private access through Vercel</span></footer>
-</div>
-</main></body></html>
+<a class="skip-link" href="#main">Skip to content</a>
+<header class="masthead">
+  <div class="frame masthead-inner">
+    <a href="/" class="brand" aria-label="Radio home">
+      <span class="brand-mark" aria-hidden="true"></span>radio<span class="brand-period" aria-hidden="true">.</span>
+    </a>
+    <nav id="navigation" aria-label="Radio" hidden>
+      <a href="#studio-heading">Studio</a>
+      <a id="research-link" href="#research" hidden>Research</a>
+      <a href="#replays">Replays</a>
+    </nav>
+  </div>
+</header>
+<main class="frame" id="main" tabindex="-1">
+  <section id="access" class="access" aria-labelledby="access-heading">
+    <h1 id="access-heading">Private studio</h1>
+    <p id="access-status" role="status">Checking access…</p>
+    <button id="retry-access" class="button" type="button" hidden>Retry</button>
+  </section>
+
+  <div id="studio" hidden>
+    <section class="workspace" aria-labelledby="studio-heading">
+      <div class="question-desk">
+        <h1 id="studio-heading" tabindex="-1">Ask the hosts<span>.</span></h1>
+        <form id="question-form">
+          <label for="question">Your question</label>
+          <textarea id="question" rows="3" maxlength="1200" minlength="3" required></textarea>
+          <div class="start-row">
+            <button id="start" class="button start-button" type="submit"><span class="play-mark" aria-hidden="true"></span> Start show</button>
+            <span class="show-format">9 min · AI voices</span>
+          </div>
+        </form>
+      </div>
+
+      <section class="console" aria-label="Show controls">
+        <div class="console-top">
+          <div class="signal-status">
+            <span id="signal" class="signal" aria-hidden="true"></span>
+            <strong id="status" role="status" tabindex="-1">Off air</strong>
+          </div>
+          <span><span class="sr-only">Elapsed / total time</span><span id="clock">00:00 / 09:00</span></span>
+        </div>
+        <div class="hosts" aria-label="Hosts">
+          <div class="channel" id="host-0">
+            <div class="channel-heading"><span class="host-name">Mara</span><span class="host-state"></span></div>
+            <meter min="0" max="1" value="0" aria-label="Mara audio level"></meter>
+          </div>
+          <div class="channel" id="host-1">
+            <div class="channel-heading"><span class="host-name">Eli</span><span class="host-state"></span></div>
+            <meter min="0" max="1" value="0" aria-label="Eli audio level"></meter>
+          </div>
+        </div>
+        <div class="console-controls">
+          <button id="record" class="button" type="button" disabled><span class="record-mark" aria-hidden="true"></span><span id="record-label">Record</span></button>
+          <button id="stop" class="button" type="button" disabled><span class="stop-mark" aria-hidden="true"></span><span id="stop-label">End show</span></button>
+        </div>
+        <div class="console-audio">
+          <label class="volume" for="volume">Volume <input id="volume" type="range" min="0" max="1" step="0.05" value="0.85"></label>
+          <button id="test-sound" class="text-button" type="button">Test sound</button>
+        </div>
+        <button id="enable-audio" class="button enable-audio" type="button" hidden>Enable sound</button>
+        <p id="audio-status" class="notice" role="status"></p>
+        <p id="error" class="notice error" role="alert"></p>
+        <p id="recording-status" class="notice" role="status"></p>
+      </section>
+
+      <form id="followup-form" class="followup-form" hidden>
+        <label for="followup">Follow-up question</label>
+        <div class="followup">
+          <input id="followup" maxlength="800" disabled required>
+          <button id="send" class="button" type="submit" disabled>Send</button>
+        </div>
+        <ul id="followup-queue" aria-label="Follow-up queue"></ul>
+        <span id="followup-status" class="sr-only" role="status"></span>
+      </form>
+    </section>
+
+    <section id="research" class="shelf" aria-labelledby="research-heading" tabindex="-1" hidden>
+      <div class="section-heading">
+        <h2 id="research-heading">Research</h2>
+        <time id="research-date"></time>
+      </div>
+      <h3 id="research-title"></h3>
+      <details class="disclosure" id="brief-details">
+        <summary>Brief</summary>
+        <div id="brief" class="disclosure-content"></div>
+      </details>
+      <details class="disclosure" id="sources-details">
+        <summary>Sources</summary>
+        <ul id="sources" class="sources disclosure-content"></ul>
+      </details>
+    </section>
+
+    <section id="replays" class="shelf" aria-labelledby="replays-heading" tabindex="-1">
+      <div class="section-heading">
+        <h2 id="replays-heading">Replays</h2>
+        <label class="replay-search" id="search-field" hidden>
+          <span class="sr-only">Search replays</span>
+          <span class="search-mark" aria-hidden="true"></span>
+          <input id="replay-search" type="search" placeholder="Search replays">
+        </label>
+      </div>
+      <div id="library"><p class="empty">No recordings yet</p></div>
+      <p id="library-no-results" class="empty" hidden>No matching replays</p>
+      <p id="library-status" class="library-status" role="alert"></p>
+    </section>
+
+    <div class="utilities">
+      <details id="diagnostics" class="disclosure" hidden>
+        <summary>Show notes &amp; usage</summary>
+        <div class="disclosure-content">
+          <div id="transcript" aria-label="Conversation transcript"></div>
+          <pre id="usage"></pre>
+          <button id="download-notes" class="button secondary" type="button">Download notes</button>
+        </div>
+      </details>
+      <details id="pilot-check" class="disclosure">
+        <summary>Pilot tools</summary>
+        <div class="disclosure-content">
+          <div class="pilot-actions">
+            <button id="run-pilot" class="button secondary" type="button">Run &amp; record 90-sec pilot</button>
+            <span class="show-format">Est. $0.15 + research</span>
+          </div>
+          <p id="pilot-status" class="notice" role="status"></p>
+          <ul id="pilot-results"></ul>
+          <div class="pilot-actions">
+            <button id="pilot-reload" class="button secondary" type="button" hidden>Reload to test replay</button>
+            <button id="pilot-download" class="button secondary" type="button" hidden>Download pilot report</button>
+          </div>
+        </div>
+      </details>
+    </div>
+  </div>
+</main>
+</body>
+</html>
