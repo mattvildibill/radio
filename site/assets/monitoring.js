@@ -2,9 +2,12 @@
 
 if (location.hostname.endsWith('.vercel.app')) {
   window.si ||= function () { (window.siq ||= []).push(arguments); };
+  window.va ||= function () { (window.vaq ||= []).push(arguments); };
 
-  const script = document.createElement('script');
-  script.src = '/_vercel/speed-insights/script.js';
-  script.async = true;
-  document.head.append(script);
+  for (const src of ['/_vercel/speed-insights/script.js', '/_vercel/insights/script.js']) {
+    const script = document.createElement('script');
+    script.src = src;
+    script.async = true;
+    document.head.append(script);
+  }
 }
